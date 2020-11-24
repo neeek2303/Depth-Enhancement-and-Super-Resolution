@@ -6,8 +6,64 @@ from . import networks
 import torch.nn as nn
 import numpy as np
 
+class SurfaceNormals(nn.Module):
+    
+    def __init__(self):
+        super(SurfaceNormals, self).__init__()
+    
+    def forward(self, depth):
+        dzdx = -self.gradient_for_normals(depth, axis=2)
+        dzdy = -self.gradient_for_normals(depth, axis=3)
+        norm = torch.cat((dzdx, dzdy, torch.ones_like(depth)), dim=1)
+        n = torch.norm(norm, p=2, dim=1, keepdim=True)
+        return norm / (n + 1e-6)
+    
+    def gradient_for_normals(self, f, axis=None):
+        N = f.ndim  # number of dimensions
+        dx = 1.0
+    
+        # use central differences on interior and one-sided differences on the
+        # endpoints. This preserves second order-accuracy over the full domain.
+        # create slice objects --- initially all are [:, :, ..., :]
+        slice1 = [slice(None)]*N
+        slice2 = [slice(None)]*N
+        slice3 = [slice(None)]*N
+        slice4 = [slice(None)]*N
+    
+        otype = f.dtype
+        if otype is torch.float32:
+            pass
+        else:
+            raise TypeError('Input shold be torch.float32')
+    
+        # result allocation
+        out = torch.empty_like(f, dtype=otype)
+    
+        # Numerical differentiation: 2nd order interior
+        slice1[axis] = slice(1, -1)
+        slice2[axis] = slice(None, -2)
+        slice3[axis] = slice(1, -1)
+        slice4[axis] = slice(2, None)
+    
+        out[tuple(slice1)] = (f[tuple(slice4)] - f[tuple(slice2)]) / (2. * dx)
+    
+        # Numerical differentiation: 1st order edges
+        slice1[axis] = 0
+        slice2[axis] = 1
+        slice3[axis] = 0
+        dx_0 = dx 
+        # 1D equivalent -- out[0] = (f[1] - f[0]) / (x[1] - x[0])
+        out[tuple(slice1)] = (f[tuple(slice2)] - f[tuple(slice3)]) / dx_0
 
-class CycleGANModel_depth(BaseModel):
+        slice1[axis] = -1
+        slice2[axis] = -1
+        slice3[axis] = -2
+        dx_n = dx 
+        # 1D equivalent -- out[-1] = (f[-1] - f[-2]) / (x[-1] - x[-2])
+        out[tuple(slice1)] = (f[tuple(slice2)] - f[tuple(slice3)]) / dx_n
+        return out
+
+class CycleGANModel_depth_by_image(BaseModel):
     """
     This class implements the CycleGAN model, for learning image-to-image translation without paired data.
 
@@ -54,43 +110,49 @@ class CycleGANModel_depth(BaseModel):
         """
         BaseModel.__init__(self, opt)
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
-        self.loss_names = ['task_syn', 'task_real', 'D_depth', 'syn_mean_diff', 'real_mean_diff', 'holes']
-        if opt.print_mean:
-            self.loss_names = ['syn_mean_diff', 'real_mean_diff', 'mean_of_abs_diff_syn', 'mean_of_abs_diff_real', 'L1_syn', 'L1_real']
-            
+        self.loss_names = ['task_syn', 'task_real']
+        if opt.norm_loss:
+            self.loss_names+=['syn_norms']
+        if self.opt.use_D:
+            self.loss_names+=['G_pred', 'D_depth']
+        
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
-        visual_names_A = ['syn_image', 'syn_depth', 'syn2real_depth',   'pred_syn_depth']
-        visual_names_B = ['real_image', 'real_depth', 'pred_real_depth', 'mask']
-        
+        visual_names_A = ['syn_image', 'syn_depth', 'pred_syn_depth']
+        visual_names_B = ['real_image', 'real_depth', 'pred_real_depth']
+    
 
+         # combine visualizations for A and B
+        
+        
+        self.model_names = ['Image_f', 'Image_f_syn', 'Task']
 
-        self.visual_names = visual_names_A + visual_names_B  # combine visualizations for A and B
+        
+        if opt.use_D:
+            self.model_names +=['D_depth']
+            
+        if opt.norm_loss:
+            visual_names_A += ['norm_syn','norm_syn_pred']
+            visual_names_B += [ 'norm_real','norm_real_pred']
+#         print(visual_names_A)
         
         
-        self.model_names = ['D_depth', 'G_A_d', 'Image_f', 'Depth_f', 'Task']
-        
-        
-        # Define networks 
-        
-        ### part_1
-        self.netD_depth = networks.define_D(1, opt.ndf, opt.netD,
-                                            opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids) 
-        translation_input_d = 4 if opt.use_image_for_trans else 1 
-        self.netG_A_d = networks.define_G(translation_input_d, 1, opt.ngf, opt.netG, opt.norm,
-                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose)
-        if opt.use_rec_as_real_input or opt.use_image_for_trans:
-            self.netG_B_d = networks.define_G(translation_input_d, 1, opt.ngf, opt.netG, opt.norm,
-                                                not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose)
+        self.visual_names = visual_names_A + visual_names_B 
         
         ### part_2 
         self.netImage_f = networks.define_G(3, opt.Imagef_outf, opt.Imagef_basef, opt.Imagef_type, opt.norm,
                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose, n_down = opt.Imagef_ndown)
         
-        self.netDepth_f = networks.define_G(1, opt.Depthf_outf, opt.Depthf_basef, opt.Depthf_type, opt.norm,
-                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose, n_down = opt.Depthf_ndown)  
+        self.netImage_f_syn = networks.define_G(3, opt.Imagef_outf, opt.Imagef_basef, opt.Imagef_type, opt.norm,
+                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose, n_down = opt.Imagef_ndown)
         
-        task_input_features = opt.Imagef_outf + opt.Depthf_outf
-        self.netTask = networks.define_G(task_input_features, 1, opt.Task_basef, opt.Task_type, opt.norm,
+        task_input_features = opt.Imagef_outf
+        
+        if opt.use_D:
+            self.netD_depth = networks.define_D(task_input_features, opt.ndf, opt.netD,
+                                                opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids) 
+        print(opt.task_norm)
+        
+        self.netTask = networks.define_G(task_input_features, 1, opt.Task_basef, opt.Task_type, opt.task_norm,
                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose, n_down = opt.Task_ndown)
         
 
@@ -109,10 +171,12 @@ class CycleGANModel_depth(BaseModel):
             self.criterionGAN = networks.GANLoss(opt.gan_mode).to(self.device)  # define GAN loss.
             
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
-            self.optimizer_G = torch.optim.Adam(itertools.chain(self.netDepth_f.parameters(), self.netImage_f.parameters(), self.netTask.parameters()), lr=opt.lr)
-            self.optimizer_D = torch.optim.Adam(itertools.chain(self.netD_depth.parameters()), lr=opt.lr, betas=(opt.beta1, 0.999))
+            self.optimizer_G = torch.optim.Adam(itertools.chain(self.netImage_f_syn.parameters(), self.netImage_f.parameters(), self.netTask.parameters()), lr=opt.lr)
             self.optimizers.append(self.optimizer_G)
-            self.optimizers.append(self.optimizer_D)
+            if self.opt.use_D:
+                self.optimizer_D = torch.optim.Adam(itertools.chain(self.netD_depth.parameters()), lr=opt.lr, betas=(opt.beta1, 0.999))
+                self.optimizers.append(self.optimizer_D)
+
 
 
     def set_input(self, input):
@@ -136,55 +200,13 @@ class CycleGANModel_depth(BaseModel):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
         
         
-        if self.opt.use_image_for_trans:
-            self.syn2real_depth = self.netG_A_d(torch.cat([self.syn_depth, self.syn_image], dim=1) )
-            syn_depth = self.syn2real_depth
-            real_depth = self.real_depth
-            if self.opt.use_rec_as_real_input:
-                r2s = self.netG_B_d(torch.cat([self.real_depth, self.real_image], dim=1))
-                self.real_rec = self.netG_A_d(torch.cat([r2s, self.real_image], dim=1))
-                real_depth = self.real_rec
-        else:
-            self.syn2real_depth = self.netG_A_d(self.syn_depth)
-            syn_depth = self.syn2real_depth
-            real_depth = self.real_depth
-            
-            if opt.use_rec_as_real_input:
-                self.real_rec = self.netG_A_d(self.netG_B_d(self.real_depth))
-                real_depth = self.real_rec
-            
 
-        self.pred_syn_depth = self.netTask(torch.cat([self.netImage_f(self.syn_image), self.netDepth_f(syn_depth)], dim=1))
-        self.pred_real_depth = self.netTask(torch.cat([self.netImage_f(self.real_image), self.netDepth_f(real_depth)], dim=1))
-        
-        
-        
-        
-        
-        syn_mean = torch.mean(self.syn_depth) 
-        syn_pred_mean = torch.mean(self.pred_syn_depth) 
-        
-        self.loss_syn_mean_diff = (syn_mean-syn_pred_mean).cpu().detach().numpy()
-        
-        self.loss_mean_of_abs_diff_syn =  np.mean(np.absolute((self.syn_depth-self.pred_syn_depth).cpu().detach().numpy()))
-        
-    
-        self.mask = torch.where(self.real_depth<-0.97, torch.tensor(0).float().to(self.real_depth.device), torch.tensor(1).float().to(self.real_depth.device))
-        mask = self.mask 
-        real_mean = torch.mean(self.real_depth*mask) 
-        real_pred_mean = torch.mean(self.pred_real_depth*mask) 
-        
-        self.loss_real_mean_diff  = (real_mean-real_pred_mean).cpu().detach().numpy() 
-        self.loss_mean_of_abs_diff_real =  np.mean(np.absolute((self.real_depth*mask-self.pred_real_depth*mask).cpu().detach().numpy()))
-        
-        
-#         self.loss_L1_syn+= self.criterion_task(self.syn_depth, self.pred_syn_depth)*4/5000
-# #         print(torch.min(self.syn_depth), torch.min(self.pred_syn_depth), torch.max(self.syn_depth), torch.max(self.pred_syn_depth))
-#         mask = torch.where(self.real_depth<-0.97, torch.tensor(0).float().to(self.real_depth.device), torch.tensor(1).float().to(self.real_depth.device))
-#         self.loss_L1_real+= self.criterion_task(self.real_depth*mask, self.pred_real_depth*mask)*4/5000
             
-            
-
+        self.features_syn = self.netImage_f_syn(self.syn_image)
+        self.features_real =  self.netImage_f(self.real_image)
+        self.pred_syn_depth = self.netTask(self.features_syn)
+        self.pred_real_depth = self.netTask(self.features_real)
+        
     def backward_D_basic(self, netD, real, fake, back=True):
         """Calculate GAN loss for the discriminator
 
@@ -196,10 +218,10 @@ class CycleGANModel_depth(BaseModel):
         Return the discriminator loss.
         We also call loss_D.backward() to calculate the gradients.
         """
-        # Real
-        pred_real = netD(real)
+#         Real
+        pred_real = netD(real.detach())
         loss_D_real = self.criterionGAN(pred_real, True)
-        # Fake
+#         Fake
         pred_fake = netD(fake.detach())
         loss_D_fake = self.criterionGAN(pred_fake, False)
         # Combined loss and calculate gradients
@@ -210,46 +232,75 @@ class CycleGANModel_depth(BaseModel):
     
     def backward_D_depth(self, back=True):
         """Calculate GAN loss for discriminator D_B"""
-        fake_depth = self.fake_depth_pool.query(self.pred_syn_depth)
-        self.loss_D_depth = self.backward_D_basic(self.netD_depth, self.syn_depth , fake_depth, back=back)
+        fake = self.fake_depth_pool.query(self.features_syn)
+        self.loss_D_depth = self.backward_D_basic(self.netD_depth, self.features_real, fake, back=back)       
+            
+
+    def backward_features(self, back=True):
+        """Calculate the loss for generators G_A and G_B"""
+
+        self.loss_G_pred = self.criterionGAN(self.netD_depth(self.features_syn), True) 
+        self.loss_G_p = self.loss_G_pred *self.opt.w_syn_adv 
+        if back:
+            self.loss_G_pred.backward(retain_graph=True)            
 
     def backward_G(self, back=True):
         """Calculate the loss for generators G_A and G_B"""
 
         
-        # Forward cycle loss || G_B(G_A(A)) - A||
-        mask_syn = torch.where(self.syn2real_depth<-0.97, torch.tensor(1).float().to(self.syn2real_depth.device), torch.tensor(0).float().to(self.syn2real_depth.device))
+        if self.opt.norm_loss:
+            calc_norm = SurfaceNormals()
+            self.norm_syn = calc_norm(self.syn_depth)
+            self.norm_syn_pred = calc_norm(self.pred_syn_depth)
+            self.norm_real = calc_norm(self.real_depth)
+            self.norm_real_pred = calc_norm(self.pred_real_depth)
+            self.loss_syn_norms = self.criterion_task(self.norm_syn, self.norm_syn_pred) 
+#             print('NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN')
+        
+        
+#         print(self.pred_syn_depth.requires_grad, self.pred_real_depth.requires_grad, self.features_syn.requires_grad, self.features_real.requires_grad )
+        
         self.loss_task_syn= self.criterion_task(self.syn_depth, self.pred_syn_depth) 
-        self.loss_holes = self.criterion_task(self.syn_depth*mask_syn, self.pred_syn_depth*mask_syn) 
+
         
-        
-        self.loss_G_pred = self.criterionGAN(self.netD_depth(self.pred_syn_depth), True)  
         mask_real = torch.where(self.real_depth<-0.97, torch.tensor(0).float().to(self.real_depth.device), torch.tensor(1).float().to(self.real_depth.device))
         self.loss_task_real = self.criterion_task(self.real_depth*mask_real, self.pred_real_depth*mask_real) 
         
-
         # combined loss and calculate gradients
-        self.loss_G = self.loss_task_syn + self.loss_G_pred*self.opt.w_syn_adv + self.loss_task_real*self.opt.w_real_l1 + self.loss_holes*self.opt.w_holles
+        
+        self.loss_G = self.loss_task_syn*self.opt.w_real_l1  + self.loss_task_real 
+        
+        if self.opt.norm_loss:
+            self.loss_G+=self.loss_syn_norms*self.opt.w_syn_norm
+        
+#         if self.opt.use_D:
+#             self.loss_G_pred = self.criterionGAN(self.netD_depth(self.features_syn), True)  
+#             self.loss_G+=self.loss_G_pred*self.opt.w_syn_adv
+            
         self.loss_G *= self.opt.scale_G
 #         print(self.loss_G)
         if back:
             self.loss_G.backward()
 
-    def optimize_parameters(self, iters, fr=1):
+    def optimize_parameters(self, iters, fr=5):
         """Calculate losses, gradients, and update network weights; called in every training iteration"""
         # forward
-        self.forward()      # compute fake images and reconstruction images.
-        # G_A and G_B
-#         self.set_requires_grad([self.netG_A , self.netG_A_d, self.netD_depth], False)  # Ds require no gradients when optimizing Gs
-        self.set_requires_grad([self.netG_A_d, self.netD_depth], False)  # Ds require no gradients when optimizing Gs
-        self.optimizer_G.zero_grad()  # set G_A and G_B's gradients to zero
-        self.backward_G()             # calculate gradients for G_A and G_B
-        self.optimizer_G.step()       # update G_A and G_B's weights
-        if iters%fr == 0:
-            self.set_requires_grad([self.netD_depth], True)  # Ds require no gradients when optimizing Gs
-            self.optimizer_D.zero_grad()   # set D_A and D_B's gradients to zero
-            self.backward_D_depth()      # calculate gradients for D_A
-            self.optimizer_D.step()  # update D_A and D_B's weights
+#         print('aaaaa')
+        self.forward() 
+        self.optimizer_G.zero_grad()
+        if self.opt.use_D:
+            self.set_requires_grad([self.netD_depth], False)
+            self.backward_features()  
+        self.backward_G()             
+        self.optimizer_G.step()       
+        if self.opt.use_D:
+#             print('bbbbb')
+            if iters%(fr*self.opt.batch_size)==0:
+#                 print(iters)
+                self.set_requires_grad([self.netD_depth], True)  
+                self.optimizer_D.zero_grad()   
+                self.backward_D_depth()      
+                self.optimizer_D.step()  
             
             
     def calculate(self):

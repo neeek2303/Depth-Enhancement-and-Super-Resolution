@@ -57,82 +57,42 @@ class CycleGANModel_depth(BaseModel):
         self.loss_names = ['task_syn', 'task_real', 'D_depth', 'syn_mean_diff', 'real_mean_diff', 'holes']
         if opt.print_mean:
             self.loss_names = ['syn_mean_diff', 'real_mean_diff', 'mean_of_abs_diff_syn', 'mean_of_abs_diff_real', 'L1_syn', 'L1_real']
+            
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         visual_names_A = ['syn_image', 'syn_depth', 'syn2real_depth',   'pred_syn_depth']
         visual_names_B = ['real_image', 'real_depth', 'pred_real_depth', 'mask']
         
-#         visual_names_A = ['syn_image', 'syn_depth', 'syn2real_depth', 'sr2syn_depth',  'pred_syn_depth']
-#         visual_names_B = ['real_image', 'real_depth', 'pred_real_depth', 'real2syn_depth', 'mask']
 
 
         self.visual_names = visual_names_A + visual_names_B  # combine visualizations for A and B
-        # specify the models you want to save to the disk. The training/test scripts will call <BaseModel.save_networks> and <BaseModel.load_networks>.
         
         
         self.model_names = ['D_depth', 'G_A_d', 'Image_f', 'Depth_f', 'Task']
         
         
-#         if self.isTrain:
-#             self.model_names = ['D_depth', 'G_A_d', 'Image_f', 'Depth_f', 'Task']
-#         else:  # during test time, only load Gs
-#             self.model_names = ['G_A', 'G_A_d']
-
-        # define networks (both Generators and discriminators)
-        # The naming is different from those used in the paper.
-        # Code (vs. paper): G_A (G), G_B (F), D_A (D_Y), D_B (D_X)
+        # Define networks 
         
+        ### part_1
         self.netD_depth = networks.define_D(1, opt.ndf, opt.netD,
-                                            opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
-        
-#         self.netG_A = networks.define_G(3, 3, opt.ngf, opt.netG, opt.norm,
-#                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose)
-        
-        self.netG_A_d = networks.define_G(1, 1, opt.ngf, opt.netG, opt.norm,
+                                            opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids) 
+        translation_input_d = 4 if opt.use_image_for_trans else 1 
+        self.netG_A_d = networks.define_G(translation_input_d, 1, opt.ngf, opt.netG, opt.norm,
                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose)
+        if opt.use_rec_as_real_input or opt.use_image_for_trans:
+            self.netG_B_d = networks.define_G(translation_input_d, 1, opt.ngf, opt.netG, opt.norm,
+                                                not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose)
         
-#         self.netG_B_d = networks.define_G(1, 1, opt.ngf, opt.netG, opt.norm,
-#                                             not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose)
+        ### part_2 
+        self.netImage_f = networks.define_G(3, opt.Imagef_outf, opt.Imagef_basef, opt.Imagef_type, opt.norm,
+                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose, n_down = opt.Imagef_ndown)
         
-        self.netG_B = networks.define_G(3, 3, opt.ngf, opt.netG, opt.norm,
-                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose)
+        self.netDepth_f = networks.define_G(1, opt.Depthf_outf, opt.Depthf_basef, opt.Depthf_type, opt.norm,
+                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose, n_down = opt.Depthf_ndown)  
         
-
-
-
-#         self.netImage_f = networks.define_G(3, 32, 32, 'resnet_6blocks', opt.norm,
-#                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose)
+        task_input_features = opt.Imagef_outf + opt.Depthf_outf
+        self.netTask = networks.define_G(task_input_features, 1, opt.Task_basef, opt.Task_type, opt.norm,
+                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose, n_down = opt.Task_ndown)
         
-#         self.netDepth_f = networks.define_G(1, 32, 32, 'resnet_6blocks', opt.norm,
-#                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose) 
-        
-        
-        self.netImage_f = networks.define_G(3, 16, 32, 'resnet_6blocks', opt.norm,
-                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose, n_down = 2)
-        
-        self.netDepth_f = networks.define_G(1, 16, 32, 'resnet_6blocks', opt.norm,
-                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose, n_down = 2)  
-        
-        
-        self.netTask = networks.define_G(32, 1, opt.ngf, 'resnet_9blocks', opt.norm,
-                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose, n_down = 2)
-        
-#         self.netTask = networks.define_G(128, 1, 128, 'EDSR', opt.norm,
-#                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose)
-   
-    
-#         self.netImage_f = networks.define_G(3, 32, 32, 'resnet_6blocks', opt.norm,
-#                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose)
-        
-#         self.netDepth_f = networks.define_G(1, 32, 32, 'resnet_6blocks', opt.norm,
-#                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose)        
-#         main_model = []
-#         main_model.append(networks.define_G(128, 64, opt.ngf, 'resnet_6blocks', opt.norm,
-#                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose, n_down = 2))
-        
-#         main_model.append(networks.define_G(64, 1, 64, 'EDSR', opt.norm,
-#                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose))
-        
-#         self.netTask  = nn.Sequential(*main_model)
 
         self.loss_L1_syn=0
         self.loss_L1_real=0
@@ -174,21 +134,26 @@ class CycleGANModel_depth(BaseModel):
 
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
-        self.syn2real_depth = self.netG_A_d(self.syn_depth)
-#         self.sr2syn_depth = self.netG_B_d(self.syn2real_depth)
-#         self.real2syn_depth = self.netG_B_d(self.real_depth) 
-        
-#         self.syn2real_image = self.netG_A(self.syn_image)
-#         syn_depth = torch.cat([self.syn2real_depth, self.sr2syn_depth], dim=1)
-#         real_depth = torch.cat([self.real_depth, self.real2syn_depth], dim=1)
-        
-        syn_depth = self.syn2real_depth
-        real_depth = self.real_depth
         
         
-        a = torch.cat([self.netImage_f(self.syn_image), self.netDepth_f(syn_depth)], dim=1)
-#         print(a.shape)
-        self.pred_syn_depth = self.netTask(a)
+        if self.opt.use_image_for_trans:
+            self.syn2real_depth = self.netG_A_d(torch.cat([self.syn_image, self.syn_depth], dim=1) )
+            syn_depth = self.syn2real_depth
+            real_depth = self.real_depth
+            if self.opt.use_rec_as_real_input:
+                self.real_rec = self.netG_A_d(self.netG_B_d(torch.cat([self.real_image, self.real_depth], dim=1) ))
+                real_depth = self.real_rec
+        else:
+            self.syn2real_depth = self.netG_A_d(self.syn_depth)
+            syn_depth = self.syn2real_depth
+            real_depth = self.real_depth
+            
+            if opt.use_rec_as_real_input:
+                self.real_rec = self.netG_A_d(self.netG_B_d(self.real_depth))
+                real_depth = self.real_rec
+            
+
+        self.pred_syn_depth = self.netTask(torch.cat([self.netImage_f(self.syn_image), self.netDepth_f(syn_depth)], dim=1))
         self.pred_real_depth = self.netTask(torch.cat([self.netImage_f(self.real_image), self.netDepth_f(real_depth)], dim=1))
         
         
@@ -253,22 +218,17 @@ class CycleGANModel_depth(BaseModel):
         
         # Forward cycle loss || G_B(G_A(A)) - A||
         mask_syn = torch.where(self.syn2real_depth<-0.97, torch.tensor(1).float().to(self.syn2real_depth.device), torch.tensor(0).float().to(self.syn2real_depth.device))
-        
         self.loss_task_syn= self.criterion_task(self.syn_depth, self.pred_syn_depth) 
-        
         self.loss_holes = self.criterion_task(self.syn_depth*mask_syn, self.pred_syn_depth*mask_syn) 
         
-
         
-        self.loss_G_pred = self.criterionGAN(self.netD_depth(self.pred_syn_depth), True)
-        
+        self.loss_G_pred = self.criterionGAN(self.netD_depth(self.pred_syn_depth), True)  
         mask_real = torch.where(self.real_depth<-0.97, torch.tensor(0).float().to(self.real_depth.device), torch.tensor(1).float().to(self.real_depth.device))
-
         self.loss_task_real = self.criterion_task(self.real_depth*mask_real, self.pred_real_depth*mask_real) 
         
 
         # combined loss and calculate gradients
-        self.loss_G = self.loss_task_syn + self.loss_G_pred*0.5 + self.loss_task_real*0.5 + self.loss_holes*20
+        self.loss_G = self.loss_task_syn + self.loss_G_pred*self.opt.w_syn_adv + self.loss_task_real*self.opt.w_real_l1 + self.loss_holes*self.opt.w_holles
 #         print(self.loss_G)
         if back:
             self.loss_G.backward()

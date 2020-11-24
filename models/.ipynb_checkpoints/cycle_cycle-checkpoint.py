@@ -52,8 +52,11 @@ class CycleGANModel(BaseModel):
             opt (Option class)-- stores all the experiment flags; needs to be a subclass of BaseOptions
         """
         BaseModel.__init__(self, opt)
+        self.opt = opt
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
         self.loss_names = ['D_A', 'G_A', 'cycle_A', 'idt_A', 'D_B', 'G_B', 'cycle_B', 'idt_B']
+        if self.opt.use_rec_iou_error:
+            self.loss_names+=['iou_rec']
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         visual_names_A = ['syn_image', 'syn_depth', 'fake_B', 'rec_A']
         visual_names_B = ['real_image', 'real_depth', 'fake_A', 'rec_B']
@@ -67,14 +70,20 @@ class CycleGANModel(BaseModel):
             self.model_names = ['G_A', 'G_B', 'D_A', 'D_B']
         else:  # during test time, only load Gs
             self.model_names = ['G_A', 'G_B']
-
+        
+        
+        input_channels = 1
+        if self.opt.cat:
+            input_channels = 4
+        
         # define networks (both Generators and discriminators)
         # The naming is different from those used in the paper.
         # Code (vs. paper): G_A (G), G_B (F), D_A (D_Y), D_B (D_X)
-        self.netG_A = networks.define_G(1, 1, opt.ngf, opt.netG, opt.norm,
+        self.netG_A = networks.define_G(input_channels, 1, opt.ngf, opt.netG, opt.norm,
                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose)
-        self.netG_B = networks.define_G(1, 1, opt.ngf, opt.netG, opt.norm,
+        self.netG_B = networks.define_G(input_channels, 1, opt.ngf, opt.netG, opt.norm,
                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose)
+        
 
         if self.isTrain:  # define discriminators
             self.netD_A = networks.define_D(1, opt.ndf, opt.netD,
@@ -114,11 +123,7 @@ class CycleGANModel(BaseModel):
         
         self.A_paths = input['A_paths']
         self.B_paths = input['B_paths']
-        
-#         input_syn = torch.cat([self.syn_depth, self.syn_image], dim=1)
-#         input_real = torch.cat([self.real_depth, self.real_image], dim=1)
-#         rec_A_in = torch.cat([self.fake_B, self.syn_image], dim=1)
-#         rec_B_in = torch.cat([self.fake_A, self.real_image], dim=1)
+    
         
         self.input_syn = self.syn_depth
         self.input_real = self.real_depth
@@ -126,37 +131,72 @@ class CycleGANModel(BaseModel):
 
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
-        self.fake_B = self.netG_A(self.input_syn)  # G_A(A)
-        self.fake_A = self.netG_B(self.input_real)  # G_B(B)
         
         
         
-        pr_d = lambda img: np.clip((img[0].permute(1,2,0).numpy()+1)/2,0,1)[:,:,0]
+        if self.opt.cat:
+            self.fake_B = self.netG_A(torch.cat([self.syn_depth, self.syn_image], dim=1))  # G_A(A)
+            self.fake_A = self.netG_B(torch.cat([self.real_depth, self.real_image], dim=1))  # G_B(B)
+        else:
+            self.fake_B = self.netG_A(self.syn_depth)  # G_A(A)
+            self.fake_A = self.netG_B(self.real_depth)  # G_B(B)
         
-        batch_size = len(self.A_paths)
 
-#         for i in range(batch_size):
-#             path = str(self.A_paths[i])
-#             path = path.split('/')[-1].split('.')[0]
-#             file = f'/root/gans_depth/pytorch-CycleGAN-and-pix2pix/fakeA_cycle/{path}.png'
-#             imageio.imwrite(file, pr_d(self.fake_A.cpu().detach()*8000).astype(np.uint16) )
-# #             np.save(file, pr_d(self.fake_A.cpu().detach()))
+        if self.opt.cat:
+            self.idt_A = self.netG_A(torch.cat([self.real_depth, self.real_image], dim=1))
+            self.idt_B = self.netG_B(torch.cat([self.syn_depth, self.syn_image], dim=1))
+        else:
+            self.idt_A = self.netG_A(self.real_depth)
+            self.idt_B = self.netG_B(self.syn_depth)     
+                     
+        
+        if self.opt.cat:
+            self.rec_A = self.netG_B(torch.cat([self.fake_B, self.syn_image], dim=1))   # G_B(G_A(A))
+            self.rec_B = self.netG_A(torch.cat([self.fake_A, self.real_image], dim=1))   # G_A(G_B(B))
+        else:
+            self.rec_A = self.netG_B(self.fake_B)   # G_B(G_A(A))
+            self.rec_B = self.netG_A(self.fake_A)   # G_A(G_B(B))        
+        
+        
+        
+        
+        
+        post = lambda img: np.clip((img[0].permute(1,2,0).numpy()+1)/2,0,1)[:,:,0]
+        if self.opt.save_all:
             
-#         batch_size = len(self.A_paths)
+            batch_size = len(self.A_paths)
 
-#         for i in range(batch_size):
-#             path = str(self.B_paths[i])
-#             path = path.split('/')[-1].split('.')[0]
-#             file = f'/root/gans_depth/pytorch-CycleGAN-and-pix2pix/fakeB_cycle/{path}.png'
-# #             np.save(file, pr_d(self.fake_B.cpu().detach()))
-#             imageio.imwrite(file, (pr_d(self.fake_B.cpu().detach())*8000).astype(np.uint16))
-        
-#         rec_A_in = torch.cat([self.fake_B, self.syn_image], dim=1)
-#         rec_B_in = torch.cat([self.fake_A, self.real_image], dim=1)        
-        self.rec_A_in = self.fake_B
-        self.rec_B_in = self.fake_A
-        self.rec_A = self.netG_B(self.rec_A_in)   # G_B(G_A(A))
-        self.rec_B = self.netG_A(self.rec_B_in)   # G_A(G_B(B))
+            for i in range(batch_size):
+                path = str(self.B_paths[i])
+                path = path.split('/')[-1].split('.')[0]
+                file = f'/root/gans_depth/pytorch-CycleGAN-and-pix2pix/fakeA_cycle/{path}.png'
+                imageio.imwrite(file, (post(self.fake_A.cpu().detach())*8000).astype(np.uint16) )
+    #             np.save(file, post(self.fake_A.cpu().detach()))
+
+            batch_size = len(self.A_paths)
+
+            for i in range(batch_size):
+                path = str(self.A_paths[i])
+                path = path.split('/')[-1].split('.')[0]
+                file = f'/root/gans_depth/pytorch-CycleGAN-and-pix2pix/fakeB_cycle/{path}.png'
+                imageio.imwrite(file, (post(self.fake_B.cpu().detach())*8000).astype(np.uint16))
+                
+                
+            for i in range(batch_size):
+                path = str(self.B_paths[i])
+                path = path.split('/')[-1].split('.')[0]
+                file = f'/root/gans_depth/pytorch-CycleGAN-and-pix2pix/BAB_cycle/{path}.png'
+                imageio.imwrite(file, (post(self.rec_A.cpu().detach())*8000).astype(np.uint16))    
+                
+            for i in range(batch_size):
+                path = str(self.A_paths[i])
+                path = path.split('/')[-1].split('.')[0]
+                file = f'/root/gans_depth/pytorch-CycleGAN-and-pix2pix/ABA_cycle/{path}.png'
+                imageio.imwrite(file, (post(self.rec_B.cpu().detach())*8000).astype(np.uint16))        
+     #             np.save(file, post(self.fake_B.cpu().detach()))  
+
+
+
 
     def backward_D_basic(self, netD, real, fake, back=True):
         """Calculate GAN loss for the discriminator
@@ -193,8 +233,8 @@ class CycleGANModel(BaseModel):
 
     def backward_G(self, back=True):
         """Calculate the loss for generators G_A and G_B"""
-        use_rec_masks = False
-        use_idt_masks = False
+        use_rec_masks = self.opt.use_rec_masks
+        use_idt_masks = self.opt.use_idt_masks
         
         lambda_idt = self.opt.lambda_identity
         lambda_A = self.opt.lambda_A
@@ -202,9 +242,9 @@ class CycleGANModel(BaseModel):
         # Identity loss
         if lambda_idt > 0:
             # G_A should be identity if real_B is fed: ||G_A(B) - B||
-            self.idt_A = self.netG_A(self.input_real)
+                
             if use_idt_masks:
-                mask_real = torch.where(self.real_depth<-0.97, torch.tensor(0).float().to(self.real_depth.device),                               torch.tensor(1).float().to(self.real_depth.device))
+                mask_real = torch.where(self.real_depth<-0.97, torch.tensor(0).float().to(self.real_depth.device),  torch.tensor(1).float().to(self.real_depth.device))
                 mask_idn = torch.where(self.idt_A<-0.97, torch.tensor(0).float().to(self.idt_A.device), torch.tensor(1).float().to(self.idt_A.device))
 
                 self.loss_idt_A = self.criterionIdt(self.idt_A*mask_real*mask_idn, self.real_depth*mask_real*mask_idn) * lambda_B * lambda_idt
@@ -213,7 +253,7 @@ class CycleGANModel(BaseModel):
                 self.loss_idt_A = self.criterionIdt(self.idt_A, self.real_depth) * lambda_B * lambda_idt
                 
             # G_B should be identity if real_A is fed: ||G_B(A) - A||
-            self.idt_B = self.netG_B(self.input_syn)
+
             
             self.loss_idt_B = self.criterionIdt(self.idt_B, self.syn_depth) * lambda_A * lambda_idt
         else:
@@ -230,27 +270,34 @@ class CycleGANModel(BaseModel):
         if use_rec_masks:
             mask_real = torch.where(self.real_depth<-0.97, torch.tensor(0).float().to(self.real_depth.device), torch.tensor(1).float().to(self.real_depth.device))
             mask_rec = torch.where(self.rec_B<-0.97, torch.tensor(0).float().to(self.rec_B.device), torch.tensor(1).float().to(self.rec_B.device))
-            print(torch.min(self.real_depth))
             self.loss_cycle_B = self.criterionCycle(self.rec_B*mask_real*mask_rec, self.real_depth*mask_real*mask_rec) * lambda_B
         else:
             self.loss_cycle_B = self.criterionCycle(self.rec_B, self.real_depth) * lambda_B
         
-        real_holes = torch.where(self.real_depth<-0.9, torch.tensor(1).float().to(self.real_depth.device), torch.tensor(0).float().to(self.real_depth.device))
-        rec_holes = torch.where(self.rec_B<-0.9, torch.tensor(1).float().to(self.rec_B.device), torch.tensor(0).float().to(self.rec_B.device))
-
+        self.loss_G = self.loss_G_A + self.loss_G_B + self.loss_cycle_A + self.loss_cycle_B + self.loss_idt_A + self.loss_idt_B 
         
-#         SMOOTH = 1e-6
-# #         intersection = (real_holes & rec_holes).sum((2, 3)) 
-# #         union = (real_holes | rec_holes).sum((2, 3)) 
-#         intersection =  torch.logical_and(real_holes,rec_holes).type(torch.float32).sum((2, 3)) 
-#         union =  torch.logical_or(real_holes,rec_holes).type(torch.float32).sum((2, 3)) 
-#         iou = (intersection + SMOOTH) / (union + SMOOTH)*5
-#         mean_iou = torch.mean(iou)
-#         self.loss_iou_rec = mean_iou 
+        
+        if self.opt.use_rec_iou_error:
+            real_holes = torch.where(self.real_depth<-0.99, torch.tensor(1).float().to(self.real_depth.device), torch.tensor(0).float().to(self.real_depth.device))
+            rec_holes = torch.where(self.rec_B<-0.99, torch.tensor(1).float().to(self.rec_B.device), torch.tensor(0).float().to(self.rec_B.device))
+            mask_and = torch.where(((real_holes==1) & (rec_holes==1)), torch.tensor(1).float().to(self.real_depth.device),   torch.tensor(0).float().to(self.real_depth.device))
+            SMOOTH = 1e-6
+#             print(torch.sum(rec_holes),  torch.sum(real_holes)  ,  torch.sum(mask_and), torch.min(real_holes)     )
+            intersection =  torch.sum(-self.rec_B*mask_and, dim=(2,3))
+            union =  torch.sum(-self.rec_B*rec_holes, dim=(2,3) ) + torch.sum(-self.real_depth*real_holes, dim=(2,3)) - intersection
+            iou = (intersection + SMOOTH) / (union + SMOOTH)
+#             print( intersection, torch.sum(-self.rec_B*rec_holes, dim=(2,3) ),  union)
+            
+            mean_iou = torch.mean(iou)
+#             print(iou.shape)
+#             print(mean_iou)
+            self.loss_iou_rec = mean_iou
+            if self.opt.back_rec_iou_error:
+                self.loss_G += self.loss_iou_rec*self.opt.iou_error_weight
         
         
         # combined loss and calculate gradients
-        self.loss_G = self.loss_G_A + self.loss_G_B + self.loss_cycle_A + self.loss_cycle_B + self.loss_idt_A + self.loss_idt_B 
+        
         if back:
             self.loss_G.backward()
 
