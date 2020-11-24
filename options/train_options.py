@@ -50,7 +50,7 @@ class TrainOptions(BaseOptions):
         
         parser.add_argument('--path_A_test', type=str, default='/mnt/hdd/un_depth/semi/sample/testB/depth', help='path_A_test')
         parser.add_argument('--path_B_test', type=str, default='/mnt/hdd/un_depth/NYUv2/depth_test', help='path_B_test')
-#         parser.add_argument('--path_B_test', type=str, default='/mnt/hdd/un_depth/semi/sample/valA/depth', help='path_A_test')
+#         parser.add_argument('--path_B_test', type=str, default='/mnt/hdd/un_depth/semi/sample/testA/depth', help='path_A_test')
         
         parser.add_argument('--image_and_depth', action='store_true', help='image and depth')
         parser.add_argument('--A_add_paths', type=str, default='/mnt/hdd/un_depth/semi/sample/trainB/img', help='path_A_test')
@@ -59,14 +59,77 @@ class TrainOptions(BaseOptions):
         
         parser.add_argument('--A_add_paths_test', type=str, default='/mnt/hdd/un_depth/semi/sample/testB/img', help='path_A_test')
         parser.add_argument('--B_add_paths_test', type=str, default='/mnt/hdd/un_depth/NYUv2/img_test', help='path_B_test')
-#         parser.add_argument('--B_add_paths_test', type=str, default='/mnt/hdd/un_depth/semi/sample/valA/img', help='path_A_test')
+#         parser.add_argument('--B_add_paths_test', type=str, default='/mnt/hdd/un_depth/semi/sample/testA/img', help='path_A_test')
         
         
         parser.add_argument('--num_test', type=int, default=5000)
         parser.add_argument('--eval', action='store_true', help='use eval mode during test time.')
         parser.add_argument('--print_mean', action='store_true', help='')
-
+        parser.add_argument('--cat', action='store_true', help='')
+        parser.add_argument('--use_rec_masks', action='store_true', help='')
+        parser.add_argument('--use_idt_masks', action='store_true', help='')
+        parser.add_argument('--save_all', action='store_true', help='')
         
-
+        parser.add_argument('--use_rec_iou_error', action='store_true', help='')
+        parser.add_argument('--back_rec_iou_error', action='store_true', help='')
+        parser.add_argument('--iou_error_weight', type=float, default=0.5, help='iou_error_weight')
+        
+        
+        
+        # Main
+        parser.add_argument('--Imagef_ndown', type=int, default=2)
+        parser.add_argument('--Depthf_ndown', type=int, default=2)
+        parser.add_argument('--Task_ndown', type=int, default=2)
+        
+        parser.add_argument('--Imagef_basef', type=int, default=32)
+        parser.add_argument('--Depthf_basef', type=int, default=32)
+        parser.add_argument('--Task_basef', type=int, default=64)
+        
+        parser.add_argument('--Imagef_outf', type=int, default=16)
+        parser.add_argument('--Depthf_outf', type=int, default=16)
+#         parser.add_argument('--Task_outf', type=int, default=32)
+        
+        
+        parser.add_argument('--Imagef_type', type=str, default='resnet_6blocks')
+        parser.add_argument('--Depthf_type', type=str, default='resnet_6blocks')
+        parser.add_argument('--Task_type', type=str, default='resnet_9blocks')
+        
+        parser.add_argument('--use_rec_as_real_input', action='store_true', help='use_rec_as_real_input')
+        parser.add_argument('--use_image_for_trans', action='store_true', help='use_rec_as_real_input')
+        parser.add_argument('--norm_loss', action='store_true', help='use_rec_as_real_input')
+        
+        parser.add_argument('--w_syn_adv', type=float, default=0.5, help='initial learning rate for adam')
+        parser.add_argument('--w_real_l1', type=float, default=0.1, help='initial learning rate for adam')
+        parser.add_argument('--w_holles', type=float, default=0.0, help='initial learning rate for adam')
+        
+        
+        parser.add_argument('--w_syn_l1', type=float, default=1, help='initial learning rate for adam')
+        parser.add_argument('--w_syn_holes', type=float, default=2, help='initial learning rate for adam')
+        parser.add_argument('--w_real_l1_d', type=float, default=1, help='initial learning rate for adam')   
+        parser.add_argument('--w_real_l1_i', type=float, default=0.5, help='initial learning rate for adam')
+        parser.add_argument('--w_real_l1_i_out', type=float, default=0.1, help='initial learning rate for adam')
+        
+        parser.add_argument('--w_syn_norm', type=float, default=0.0, help='initial learning rate for adam')
+        parser.add_argument('--task_norm', type=str, default='instance', help='instance normalization or batch normalization [instance | batch | none]')
+        
+        
+        
+        parser.add_argument('--ImageDepthf_outf', type=int, default=32)
+        parser.add_argument('--ImageDepthf_basef', type=int, default=64)
+        parser.add_argument('--ImageDepthf_type', type=str, default='resnet_6blocks')
+        
+        parser.add_argument('--I2D_base', type=int, default=64)
+        parser.add_argument('--I2D_type', type=str, default='resnet_9blocks')
+        
+        
+        
+        parser.add_argument('--scale_G', type=float, default=1.0, help='initial learning rate for adam')
+        
+        
+        
+        parser.add_argument('--notscannet', type=bool, default=True, help='initial learning rate for adam') 
+        parser.add_argument('--use_D', action='store_true', help='')
+        parser.add_argument('--use_i2d_in_input', action='store_true', help='')
+        
         self.isTrain = True
         return parser
