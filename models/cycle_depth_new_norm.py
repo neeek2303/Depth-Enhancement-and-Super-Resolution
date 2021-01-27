@@ -334,7 +334,7 @@ def get_smooth_weight(depth, Image, num_scales):
     
   
     
-class CycleGANModel_depth_new(BaseModel):
+class CycleGANModel_depth_new_norm(BaseModel):
     """
     This class implements the CycleGAN model, for learning image-to-image translation without paired data.
 
@@ -401,8 +401,8 @@ class CycleGANModel_depth_new(BaseModel):
             self.loss_names = ['syn_mean_diff', 'real_mean_diff', 'mean_of_abs_diff_syn', 'mean_of_abs_diff_real', 'L1_syn', 'L1_real']
             
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
-        visual_names_A = ['syn_image', 'syn_depth', 'syn2real_depth', 'syn_depth_by_image',  'pred_syn_depth']
-        visual_names_B = ['real_image', 'real_depth', 'real_depth_by_image', 'pred_real_depth', 'mask']
+        visual_names_A = ['syn_image', 'syn_depth', 'syn2real_depth', 'syn_depth_by_image',  'pred_syn_depth', 'pred_syn_impr']
+        visual_names_B = ['real_image', 'real_depth', 'real_depth_by_image', 'pred_real_depth', 'mask', 'pred_real_impr']
         
         if opt.norm_loss:
             visual_names_A += ['norm_syn','norm_syn_pred', 'norm_syn2real']
@@ -421,7 +421,7 @@ class CycleGANModel_depth_new(BaseModel):
         self.visual_names = visual_names_A + visual_names_B  # combine visualizations for A and B
         
         
-        self.model_names = ['Image2Depth','I2D_features_real', 'I2D_features_syn',  'Task', 'Depth_f_syn', 'Depth_f_real']
+        self.model_names = ['Image2Depth','I2D_features_real', 'I2D_features_syn',  'Task', 'Depth_f_syn', 'Depth_f_real', 'Norm_impr']
         
         
         # Define networks 
@@ -438,8 +438,12 @@ class CycleGANModel_depth_new(BaseModel):
         self.netI2D_features_real = networks.define_G(3, opt.ImageDepthf_outf, opt.ImageDepthf_basef, opt.ImageDepthf_type, opt.norm,
                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose)
         
+
         self.netI2D_features_syn = networks.define_G(3, opt.ImageDepthf_outf, opt.ImageDepthf_basef, opt.ImageDepthf_type, opt.norm,
                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose)
+        
+        self.netNorm_impr = networks.define_G(1, 1, 32, 'resnet_6blocks', opt.norm,
+                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, True)        
         
         I2D_input_features = opt.ImageDepthf_outf
         self.netImage2Depth = networks.define_G(I2D_input_features, 1, opt.I2D_base, opt.I2D_type, opt.norm,
@@ -483,7 +487,7 @@ class CycleGANModel_depth_new(BaseModel):
             self.criterionGAN = networks.GANLoss(opt.gan_mode).to(self.device)  # define GAN loss.
             
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
-            self.optimizer_G = torch.optim.Adam(itertools.chain(self.netDepth_f_syn.parameters(), self.netDepth_f_real.parameters(), self.netTask.parameters()), lr=opt.lr)
+            self.optimizer_G = torch.optim.Adam(itertools.chain(self.netNorm_impr.parameters()), lr=opt.lr)
 #             self.optimizer_G = torch.optim.Adam(itertools.chain( self.netTask.parameters()), lr=opt.lr)
 #             self.optimizer_D = torch.optim.Adam(itertools.chain(self.netD_depth.parameters()), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizers.append(self.optimizer_G)
@@ -534,24 +538,7 @@ class CycleGANModel_depth_new(BaseModel):
         
         
         
-        
-        
-#         if self.opt.use_image_for_trans:
-#             self.syn2real_depth = self.netG_A_d(torch.cat([self.syn_depth, self.syn_image], dim=1) )
-#             syn_depth = self.syn2real_depth
-#             real_depth = self.real_depth
-#             if self.opt.use_rec_as_real_input:
-#                 r2s = self.netG_B_d(torch.cat([self.real_depth, self.real_image], dim=1))
-#                 self.real_rec = self.netG_A_d(torch.cat([r2s, self.real_image], dim=1))
-#                 real_depth = self.real_rec
-#         else:
-#             self.syn2real_depth = self.netG_A_d(self.syn_depth)
-#             syn_depth = self.syn2real_depth
-#             real_depth = self.real_depth
-            
-#             if opt.use_rec_as_real_input:
-#                 self.real_rec = self.netG_A_d(self.netG_B_d(self.real_depth))
-#                 real_depth = self.real_rec
+    
         self.syn2real_depth =  self.syn_depth   
         syn_depth = self.syn_depth
         real_depth = self.real_depth
@@ -565,11 +552,10 @@ class CycleGANModel_depth_new(BaseModel):
         if self.opt.use_masked:
             out = []
             for i in range(self.mask.shape[0]):
-                number = np.random.randint(6,11)
-                xs = np.random.choice(self.mask.shape[3], number, replace=False)
-                ys = np.random.choice(self.mask.shape[2], number, replace=False)
-                sizes_x = np.random.randint(self.mask.shape[3]//16, self.mask.shape[3]//4, number)*np.random.randint(0,2)
-                sizes_y = np.random.randint(self.mask.shape[2]//16, self.mask.shape[2]//4, number)*np.random.randint(0,2)
+                xs = np.random.choice(self.mask.shape[3], 10, replace=False)
+                ys = np.random.choice(self.mask.shape[2], 10, replace=False)
+                sizes_x = np.random.randint(self.mask.shape[3]//16, self.mask.shape[3]//4, 10)
+                sizes_y = np.random.randint(self.mask.shape[2]//16, self.mask.shape[2]//4, 10)
                 ones = np.ones_like(self.mask.cpu().numpy()[0][0])
                 
                 for x, y, s_x, s_y in zip(xs,ys,sizes_x, sizes_y):
@@ -603,10 +589,12 @@ class CycleGANModel_depth_new(BaseModel):
 
 #         syn_task_input = torch.cat([syn_depth, image_features_syn], dim=1)
 #         real_task_input = torch.cat([real_depth, image_features_real], dim=1)
-        self.pred_syn_depth = self.netTask(syn_task_input)
-        self.pred_real_depth = self.netTask(real_task_input)
+        self.pred_syn_impr = self.netTask(syn_task_input)
+        self.pred_real_impr = self.netTask(real_task_input)
         
-#         print(torch.min(self.pred_real_depth))
+        self.pred_syn_depth = self.netNorm_impr(self.pred_syn_impr) + self.pred_syn_impr
+        self.pred_real_depth = self.netNorm_impr(self.pred_real_impr) + self.pred_real_impr
+
         
         
         
@@ -700,9 +688,10 @@ class CycleGANModel_depth_new(BaseModel):
             self.loss_G_pred =  self.criterionGAN(self.netD_depth(self.norm_real_pred), True)
 #             self.loss_G_pred = self.criterionGAN(self.netD_depth(self.norm_real_pred), True)  + self.criterionGAN(self.netD_depth(self.norm_syn_pred), True) 
 
-        
+
         # combined loss and calculate gradients
-        self.loss_G = self.loss_task_syn*self.opt.w_syn_l1 + self.loss_holes_syn*self.opt.w_syn_holes + self.loss_task_real_by_depth*self.opt.w_real_l1_d + self.loss_task_real_by_image*self.opt.w_real_l1_i
+        self.loss_G = self.loss_task_syn*self.opt.w_syn_l1 + self.loss_holes_syn*self.opt.w_syn_holes + self.loss_task_real_by_depth*self.opt.w_real_l1_d 
+
         
         if self.opt.use_tv:
             self.loss_tv = tv_loss(self.norm_syn_pred, 1)
@@ -742,8 +731,8 @@ class CycleGANModel_depth_new(BaseModel):
         self.forward()      # compute fake images and reconstruction images.
         # G_A and G_B
 #         self.set_requires_grad([self.netG_A , self.netG_A_d, self.netD_depth], False)  # Ds require no gradients when optimizing Gs
-        self.set_requires_grad([self.netI2D_features_syn, self.netI2D_features_real, self.netImage2Depth ], False)  # Ds require no gradients when optimizing Gs
-    
+#         self.set_requires_grad([self.netI2D_features_syn, self.netI2D_features_real, self.netImage2Depth], False)  # Ds require no gradients when optimizing Gs
+        self.set_requires_grad([self.netI2D_features_syn, self.netI2D_features_real, self.netImage2Depth, self.netTask, self.netDepth_f_syn, self.netDepth_f_real], False) 
         if self.opt.use_D:
             self.set_requires_grad([self.netI2D_features_syn, self.netI2D_features_real, self.netImage2Depth, self.netD_depth ], False)
         self.optimizer_G.zero_grad()  # set G_A and G_B's gradients to zero
@@ -751,7 +740,7 @@ class CycleGANModel_depth_new(BaseModel):
         self.optimizer_G.step()       # update G_A and G_B's weights
         
         if self.opt.use_D:
-            if iters%(fr*self.opt.batch_size) or iters<2000 == 0:
+            if iters%(fr*self.opt.batch_size) == 0:
                 self.set_requires_grad([self.netD_depth], True)  # Ds require no gradients when optimizing Gs
                 self.optimizer_D.zero_grad()   # set D_A and D_B's gradients to zero
                 self.backward_D_depth()      # calculate gradients for D_A

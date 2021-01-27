@@ -114,7 +114,7 @@ class CycleGANModel_depth_by_image(BaseModel):
         if opt.norm_loss:
             self.loss_names+=['syn_norms']
         if self.opt.use_D:
-            self.loss_names+=['G_pred', 'D_depth']
+            self.loss_names+=['G_pred', 'D_depth', 'G_pred_r']
         
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         visual_names_A = ['syn_image', 'syn_depth', 'pred_syn_depth']
@@ -150,15 +150,14 @@ class CycleGANModel_depth_by_image(BaseModel):
         if opt.use_D:
             self.netD_depth = networks.define_D(task_input_features, opt.ndf, opt.netD,
                                                 opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids) 
-        print(opt.task_norm)
         
-        self.netTask = networks.define_G(task_input_features, 1, opt.Task_basef, opt.Task_type, opt.task_norm,
+        self.netTask = networks.define_G(task_input_features, 1, opt.Task_basef, opt.Task_type, opt.norm,
                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose, n_down = opt.Task_ndown)
         
 
         self.loss_L1_syn=0
         self.loss_L1_real=0
-
+        self.loss_D_depth = 0 
         
         if self.isTrain:
             self.fake_depth_pool = ImagePool(opt.pool_size) 
@@ -232,14 +231,15 @@ class CycleGANModel_depth_by_image(BaseModel):
     
     def backward_D_depth(self, back=True):
         """Calculate GAN loss for discriminator D_B"""
-        fake = self.fake_depth_pool.query(self.features_syn)
-        self.loss_D_depth = self.backward_D_basic(self.netD_depth, self.features_real, fake, back=back)       
+        fake = self.fake_depth_pool.query(self.features_real)
+        self.loss_D_depth = self.backward_D_basic(self.netD_depth, self.features_syn, fake, back=back)       
             
 
     def backward_features(self, back=True):
         """Calculate the loss for generators G_A and G_B"""
 
-        self.loss_G_pred = self.criterionGAN(self.netD_depth(self.features_syn), True) 
+        self.loss_G_pred = self.criterionGAN(self.netD_depth(self.features_real), True)
+        self.loss_G_pred_r = self.criterionGAN(self.netD_depth(self.features_syn), True)
         self.loss_G_p = self.loss_G_pred *self.opt.w_syn_adv 
         if back:
             self.loss_G_pred.backward(retain_graph=True)            
@@ -268,7 +268,7 @@ class CycleGANModel_depth_by_image(BaseModel):
         
         # combined loss and calculate gradients
         
-        self.loss_G = self.loss_task_syn*self.opt.w_real_l1  + self.loss_task_real 
+        self.loss_G = self.loss_task_syn*self.opt.w_syn_l1  + self.loss_task_real*self.opt.w_real_l1
         
         if self.opt.norm_loss:
             self.loss_G+=self.loss_syn_norms*self.opt.w_syn_norm
@@ -282,7 +282,7 @@ class CycleGANModel_depth_by_image(BaseModel):
         if back:
             self.loss_G.backward()
 
-    def optimize_parameters(self, iters, fr=10):
+    def optimize_parameters(self, iters, fr=700):
         """Calculate losses, gradients, and update network weights; called in every training iteration"""
         # forward
 #         print('aaaaa')
@@ -294,9 +294,8 @@ class CycleGANModel_depth_by_image(BaseModel):
         self.backward_G()             
         self.optimizer_G.step()       
         if self.opt.use_D:
-#             print('bbbbb')
-            if iters%(fr*self.opt.batch_size)==0:
-#                 print(iters)
+            if (iters%(fr*self.opt.batch_size)==0) or (iters<800):
+                print(iters,fr*self.opt.batch_size, iters%(fr*self.opt.batch_size))
                 self.set_requires_grad([self.netD_depth], True)  
                 self.optimizer_D.zero_grad()   
                 self.backward_D_depth()      
@@ -308,4 +307,4 @@ class CycleGANModel_depth_by_image(BaseModel):
         # forward
         self.forward()      # compute fake images and reconstruction images.
         self.backward_G(back=False)             # calculate gradients for G_A and G_B
-        self.backward_D_depth(back=False)      # calculate gradients for D_A
+
