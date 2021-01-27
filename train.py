@@ -28,71 +28,21 @@ import numpy as np
 import matplotlib.pyplot as plt
 wandb.init(project="translation_compare")
 from models.cycle_depth import CycleGANModel_depth
-from models.cycle_cycle import CycleGANModel
+from models.cycle_depth_new import CycleGANModel_depth_new
+from models.cycle_depth_new_norm import CycleGANModel_depth_new_norm
+# from models.cycle_cycle import CycleGANModel
+from models.cycle_cycle_last import CycleGANModel
+from models.cycle_depth_by_image import CycleGANModel_depth_by_image
 from data.my_dataset import MyUnalignedDataset
 import torch
 from collections import OrderedDict 
 
 
-def plot_img(img_dict, global_step, is_epoch=False, depth=True):
 
-        img_t = img_dict['real_A'].cpu().detach()
-        lab_t = img_dict['fake_B'].cpu().detach()
-        img_t2t = img_dict['rec_A'].cpu().detach()
-        img_t2t_d = img_dict['idt_B'].cpu().detach()
-
-        
-        img_s = img_dict['real_B'].cpu().detach()
-        lab_s = img_dict['fake_A'].cpu().detach()
-        img_s2t = img_dict['rec_B'].cpu().detach()
-        img_s2t_d = img_dict['idt_A'].cpu().detach()
-
-        
-        n_col = 4
-        n_row = 2
-        fig, axes = plt.subplots(nrows = n_row, ncols = n_col, figsize=(30, 15))
-        fig.subplots_adjust(hspace=0.0, wspace=0.01)
-        
-        for ax in axes.flatten():
-            ax.axis('off')
-            
-        if depth:    
-            pr = lambda img: np.clip((img[0].permute(1,2,0).numpy()+1)/2,0,1)
-        else:
-            pr = lambda img: np.clip((img[0].permute(1,2,0).numpy()+1)/2,0,1)
-
-        axes[0,0].set_title('Syn RGB ')
-        axes[0,1].set_title('Fake real RGB')
-        axes[0,2].set_title('Reconstructed real')
-        axes[0,3].set_title('Identity fake')
-
-            
-        axes[1,0].set_title('Real RGB')
-        axes[1,1].set_title('Fake syn Depth')
-        axes[1,2].set_title('Reconstructed Fake')
-        axes[1,3].set_title('S-R Depth')
-
-            
-        axes[0,0].imshow(pr(img_t), cmap=plt.get_cmap('RdYlBu'))
-        axes[0,1].imshow(pr(lab_t), cmap=plt.get_cmap('RdYlBu'))
-        axes[0,2].imshow(pr(img_t2t), cmap=plt.get_cmap('RdYlBu'))
-        axes[0,3].imshow(pr(img_t2t_d), cmap=plt.get_cmap('RdYlBu'))
-
-            
-        axes[1,0].imshow(pr(img_s), cmap=plt.get_cmap('RdYlBu'))
-        axes[1,1].imshow(pr(lab_s), cmap=plt.get_cmap('RdYlBu'))
-        axes[1,2].imshow(pr(img_s2t), cmap=plt.get_cmap('RdYlBu'))
-        axes[1,3].imshow(pr(img_s2t_d), cmap=plt.get_cmap('RdYlBu'))
-        
-        wandb.log({"chart": fig}, step=global_step)
-        plt.close(fig)   
-        
-def plot_part2(img_dict, global_step, is_epoch=False, depth=True):
+def plot_only_depth(img_dict, global_step, depth=True,  is_epoch=False, stage='train'):
 
         syn_image = img_dict['syn_image'].cpu().detach()
         syn_depth = img_dict['syn_depth'].cpu().detach()
-        syn2real_depth = img_dict['syn2real_depth'].cpu().detach()
-#         syn2real_image = img_dict['syn2real_image'].cpu().detach()
         pred_syn_depth = img_dict['pred_syn_depth'].cpu().detach()
         
         
@@ -101,9 +51,9 @@ def plot_part2(img_dict, global_step, is_epoch=False, depth=True):
         pred_real_depth = img_dict['pred_real_depth'].cpu().detach()
 
         
-        n_col = 4
+        n_col = 3
         n_row = 2
-        fig, axes = plt.subplots(nrows = n_row, ncols = n_col, figsize=(45, 25))
+        fig, axes = plt.subplots(nrows = n_row, ncols = n_col, figsize=(45, 30))
         fig.subplots_adjust(hspace=0.0, wspace=0.01)
         
         for ax in axes.flatten():
@@ -115,46 +65,41 @@ def plot_part2(img_dict, global_step, is_epoch=False, depth=True):
 
         axes[0,0].set_title('syn_image')
         axes[0,1].set_title('syn_depth')
-        axes[0,2].set_title('syn2real_depth')
-        axes[0,3].set_title('pred_syn_depth')
+        axes[0,2].set_title('pred_syn_depth')
 
-        axes[1,0].set_title('nothing')
-        
-        axes[1,1].set_title('real_image')
-        axes[1,2].set_title('real_depth')
-        axes[1,3].set_title('pred_real_depth')
+        axes[1,0].set_title('real_image')
+        axes[1,1].set_title('real_depth')
+        axes[1,2].set_title('pred_real_depth')
 
             
         axes[0,0].imshow(pr(syn_image))
         axes[0,1].imshow(pr_d(syn_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
-        axes[0,2].imshow(pr_d(syn2real_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
-        axes[0,3].imshow(pr_d(pred_syn_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
-
+        axes[0,2].imshow(pr_d(pred_syn_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
             
-        axes[1,0].imshow(pr(real_image*0)) # nothing
         
-        axes[1,1].imshow(pr(real_image))
-        axes[1,2].imshow(pr_d(real_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
-        axes[1,3].imshow(pr_d(pred_real_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        axes[1,0].imshow(pr(real_image))
+        axes[1,1].imshow(pr_d(real_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        axes[1,2].imshow(pr_d(pred_real_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
         
         wandb.log({"chart": fig}, step=global_step)
-        plt.close(fig)   
-        
-def plot_part3(img_dict, global_step, is_epoch=False, depth=True):
+        plt.close(fig)
+
+def plot_main_new(img_dict, global_step, depth=True,  is_epoch=False, stage='train'):
 
         syn_image = img_dict['syn_image'].cpu().detach()
         syn_depth = img_dict['syn_depth'].cpu().detach()
         syn2real_depth = img_dict['syn2real_depth'].cpu().detach()
 #         syn2real_image = img_dict['syn2real_image'].cpu().detach()
         pred_syn_depth = img_dict['pred_syn_depth'].cpu().detach()
-        
+        syn_depth_by_image = img_dict['syn_depth_by_image'].cpu().detach()
         
         real_image = img_dict['real_image'].cpu().detach()
         real_depth = img_dict['real_depth'].cpu().detach()
         pred_real_depth = img_dict['pred_real_depth'].cpu().detach()
-        
-        sr2syn = img_dict['sr2syn_depth'].cpu().detach()
-        real2syn = img_dict['real2syn_depth'].cpu().detach()
+        real_depth_by_image = img_dict['real_depth_by_image'].cpu().detach()
+        mask  = img_dict['mask'].cpu().detach()
+#         sr2syn = img_dict['sr2syn_depth'].cpu().detach()
+#         real2syn = img_dict['real2syn_depth'].cpu().detach()
         
         n_col = 5
         n_row = 2
@@ -172,32 +117,172 @@ def plot_part3(img_dict, global_step, is_epoch=False, depth=True):
         axes[0,1].set_title('syn_depth')
         axes[0,2].set_title('syn2real_depth')
         axes[0,3].set_title('pred_syn_depth')
-        axes[0,4].set_title('sr2syn')
+        axes[0,4].set_title('syn_depth_by_image')
+#         axes[0,4].set_title('sr2syn')
 
-        axes[1,0].set_title('nothing')
-        
+        axes[1,0].set_title('mask')
         axes[1,1].set_title('real_image')
         axes[1,2].set_title('real_depth')
         axes[1,3].set_title('pred_real_depth')
-        axes[1,3].set_title('real2syn')
+        axes[1,4].set_title('real_depth_by_image')
+#         axes[1,3].set_title('real2syn')
             
         axes[0,0].imshow(pr(syn_image))
-        axes[0,1].imshow(pr_d(syn_depth), cmap=plt.get_cmap('RdYlBu'))
-        axes[0,2].imshow(pr_d(syn2real_depth), cmap=plt.get_cmap('RdYlBu'))
-        axes[0,3].imshow(pr_d(pred_syn_depth), cmap=plt.get_cmap('RdYlBu'))
-        axes[0,4].imshow(pr_d(sr2syn), cmap=plt.get_cmap('RdYlBu'))
+        axes[0,1].imshow(pr_d(syn_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        axes[0,2].imshow(pr_d(syn2real_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        axes[0,3].imshow(pr_d(pred_syn_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        axes[0,4].imshow(pr_d(syn_depth_by_image), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+#         axes[0,4].imshow(pr_d(pred_syn_depth*0), cmap=plt.get_cmap('RdYlBu'))
             
-        axes[1,0].imshow(pr(real_image*0)) # nothing
+        axes[1,0].imshow(pr_d(mask)) # nothing
         
         axes[1,1].imshow(pr(real_image))
-        axes[1,2].imshow(pr_d(real_depth), cmap=plt.get_cmap('RdYlBu'))
-        axes[1,3].imshow(pr_d(pred_real_depth), cmap=plt.get_cmap('RdYlBu'))
-        axes[1,4].imshow(pr_d(real2syn), cmap=plt.get_cmap('RdYlBu'))
+        axes[1,2].imshow(pr_d(real_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        axes[1,3].imshow(pr_d(pred_real_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        axes[1,4].imshow(pr_d(real_depth_by_image), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+#         axes[1,4].imshow(pr_d(real2syn), cmap=plt.get_cmap('RdYlBu'))
         
         wandb.log({"chart": fig}, step=global_step)
         plt.close(fig)
         
-def plot_part4(img_dict, global_step, is_epoch=False, depth=True, stage='train'):
+        
+def plot_main_new_norm(img_dict, global_step, depth=True,  is_epoch=False, stage='train'):
+
+        syn_image = img_dict['syn_image'].cpu().detach()
+        syn_depth = img_dict['syn_depth'].cpu().detach()
+        syn2real_depth = img_dict['syn2real_depth'].cpu().detach()
+#         syn2real_depth = img_dict['pred_syn_impr'].cpu().detach()
+        pred_syn_depth = img_dict['pred_syn_depth'].cpu().detach()
+        syn_depth_by_image = img_dict['syn_depth_by_image'].cpu().detach()
+        
+        syn_norm = img_dict['norm_syn'].cpu().detach()
+        norm_syn2real = img_dict['norm_syn2real'].cpu().detach()
+        syn_norm_pred = img_dict['norm_syn_pred'].cpu().detach()
+        
+        real_image = img_dict['real_image'].cpu().detach()
+        real_depth = img_dict['real_depth'].cpu().detach()
+        pred_real_depth = img_dict['pred_real_depth'].cpu().detach()
+        real_depth_by_image = img_dict['real_depth_by_image'].cpu().detach()
+        mask  = img_dict['mask'].cpu().detach()
+        gt_mask  = img_dict['depth_masked'].cpu().detach()
+#         gt_mask  = img_dict['pred_real_impr'].cpu().detach()
+    
+        real_norm = img_dict['norm_real'].cpu().detach()
+        real_norm_pred = img_dict['norm_real_pred'].cpu().detach()
+
+        
+        n_col = 4
+        n_row = 4
+        fig, axes = plt.subplots(nrows = n_row, ncols = n_col, figsize=(45, 30))
+        fig.subplots_adjust(hspace=0.0, wspace=0.01)
+        
+        for ax in axes.flatten():
+            ax.axis('off')
+            
+            
+        pr_d = lambda img: np.clip((img[0].permute(1,2,0).numpy()+1)/2,0,1)[:,:,0]
+        pr = lambda img: np.clip((img[0].permute(1,2,0).numpy()+1)/2,0,1)
+
+        axes[0,0].set_title('syn_image')
+        axes[0,1].set_title('syn_depth')
+        axes[0,2].set_title('syn2real_depth')
+        axes[0,3].set_title('pred_syn_depth')
+        axes[1,0].set_title('syn_depth_by_image')
+        axes[1,1].set_title('norm_syn')
+        axes[1,2].set_title('norm_syn_pred')
+        axes[1,3].set_title('nothing') 
+
+
+        axes[2,0].set_title('mask')
+        axes[2,1].set_title('real_image')
+        axes[2,2].set_title('real_depth')
+        axes[2,3].set_title('pred_real_depth')
+        axes[3,0].set_title('real_depth_by_image')
+        axes[3,1].set_title('norm_real')
+        axes[3,2].set_title('norm_real_pred')
+        axes[3,3].set_title('gt_mask')         
+
+            
+        axes[0,0].imshow(pr(syn_image))
+        axes[0,1].imshow(pr_d(syn_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        axes[0,2].imshow(pr_d(syn2real_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        axes[0,3].imshow(pr_d(pred_syn_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        axes[1,0].imshow(pr_d(syn_depth_by_image), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        axes[1,1].imshow(pr(syn_norm*1000))
+        axes[1,2].imshow(pr(norm_syn2real*1000))
+        axes[1,3].imshow(pr(syn_norm_pred*1000))
+            
+        axes[2,0].imshow(pr_d(mask))
+        axes[2,1].imshow(pr(real_image))
+        axes[2,2].imshow(pr_d(real_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        axes[2,3].imshow(pr_d(pred_real_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        axes[3,0].imshow(pr_d(real_depth_by_image), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        axes[3,2].imshow(pr(real_norm*1000))
+        axes[3,3].imshow(pr(real_norm_pred*1000))
+#         axes[3,1].imshow(pr(real_norm_pred*0))
+        axes[3,1].imshow(pr_d(gt_mask), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        
+        wandb.log({"chart": fig}, step=global_step)
+        plt.close(fig)        
+        
+def plot_main(img_dict, global_step, depth=True,  is_epoch=False, stage='train'):
+
+        syn_image = img_dict['syn_image'].cpu().detach()
+        syn_depth = img_dict['syn_depth'].cpu().detach()
+        syn2real_depth = img_dict['syn2real_depth'].cpu().detach()
+#         syn2real_image = img_dict['syn2real_image'].cpu().detach()
+        pred_syn_depth = img_dict['pred_syn_depth'].cpu().detach()
+        
+        
+        real_image = img_dict['real_image'].cpu().detach()
+        real_depth = img_dict['real_depth'].cpu().detach()
+        pred_real_depth = img_dict['pred_real_depth'].cpu().detach()
+        mask  = img_dict['mask'].cpu().detach()
+#         sr2syn = img_dict['sr2syn_depth'].cpu().detach()
+#         real2syn = img_dict['real2syn_depth'].cpu().detach()
+        
+        n_col = 4
+        n_row = 2
+        fig, axes = plt.subplots(nrows = n_row, ncols = n_col, figsize=(45, 30))
+        fig.subplots_adjust(hspace=0.0, wspace=0.01)
+        
+        for ax in axes.flatten():
+            ax.axis('off')
+            
+            
+        pr_d = lambda img: np.clip((img[0].permute(1,2,0).numpy()+1)/2,0,1)[:,:,0]
+        pr = lambda img: np.clip((img[0].permute(1,2,0).numpy()+1)/2,0,1)
+
+        axes[0,0].set_title('syn_image')
+        axes[0,1].set_title('syn_depth')
+        axes[0,2].set_title('syn2real_depth')
+        axes[0,3].set_title('pred_syn_depth')
+#         axes[0,4].set_title('sr2syn')
+
+        axes[1,0].set_title('mask')
+        
+        axes[1,1].set_title('real_image')
+        axes[1,2].set_title('real_depth')
+        axes[1,3].set_title('pred_real_depth')
+#         axes[1,3].set_title('real2syn')
+            
+        axes[0,0].imshow(pr(syn_image))
+        axes[0,1].imshow(pr_d(syn_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        axes[0,2].imshow(pr_d(syn2real_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        axes[0,3].imshow(pr_d(pred_syn_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+#         axes[0,4].imshow(pr_d(pred_syn_depth*0), cmap=plt.get_cmap('RdYlBu'))
+            
+        axes[1,0].imshow(pr_d(mask)) # nothing
+        
+        axes[1,1].imshow(pr(real_image))
+        axes[1,2].imshow(pr_d(real_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        axes[1,3].imshow(pr_d(pred_real_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+#         axes[1,4].imshow(pr_d(real2syn), cmap=plt.get_cmap('RdYlBu'))
+        
+        wandb.log({"chart": fig}, step=global_step)
+        plt.close(fig)
+        
+def plot_cycle(img_dict, global_step, is_epoch=False, depth=True, stage='train'):
 
         syn_image = img_dict['syn_image'].cpu().detach()
         syn_depth = img_dict['syn_depth'].cpu().detach()
@@ -205,16 +290,25 @@ def plot_part4(img_dict, global_step, is_epoch=False, depth=True, stage='train')
         rec_A = img_dict['rec_A'].cpu().detach()
         idt_B = img_dict['idt_B'].cpu().detach()
         
+        norm_syn = img_dict['norm_syn'].cpu().detach()
+        norm_fake_B = img_dict['norm_fake_B'].cpu().detach()
+        norm_rec_A = img_dict['norm_rec_A'].cpu().detach()
+        norm_idt_B = img_dict['norm_idt_B'].cpu().detach()
+        
         
         real_image = img_dict['real_image'].cpu().detach()
         real_depth = img_dict['real_depth'].cpu().detach()
         fake_A = img_dict['fake_A'].cpu().detach()
         rec_B = img_dict['rec_B'].cpu().detach()
         idt_A = img_dict['idt_A'].cpu().detach()
-
+        
+        norm_real = img_dict['norm_real'].cpu().detach()
+        norm_fake_A = img_dict['norm_fake_A'].cpu().detach()
+        norm_rec_B = img_dict['norm_rec_B'].cpu().detach()
+        norm_idt_A = img_dict['norm_idt_A'].cpu().detach()
         
         n_col = 5
-        n_row = 2
+        n_row = 4
         fig, axes = plt.subplots(nrows = n_row, ncols = n_col, figsize=(45, 25))
         fig.subplots_adjust(hspace=0.0, wspace=0.01)
         
@@ -229,12 +323,25 @@ def plot_part4(img_dict, global_step, is_epoch=False, depth=True, stage='train')
         axes[0,2].set_title('fake_B')
         axes[0,3].set_title('rec_A')
         axes[0,4].set_title('idt_B')
+        
+        axes[1,0].set_title('nothing')
+        axes[1,1].set_title('syn_depth')
+        axes[1,2].set_title('fake_B')
+        axes[1,3].set_title('rec_A')
+        axes[1,4].set_title('idt_B')
 
-        axes[1,0].set_title('real_image')
-        axes[1,1].set_title('real_depth')
-        axes[1,2].set_title('fake_A')
-        axes[1,3].set_title('rec_B')
-        axes[1,4].set_title('idt_A')
+        axes[2,0].set_title('real_image')
+        axes[2,1].set_title('real_depth')
+        axes[2,2].set_title('fake_A')
+        axes[2,3].set_title('rec_B')
+        axes[2,4].set_title('idt_A')
+        
+        
+        axes[3,0].set_title('real_image')
+        axes[3,1].set_title('real_depth')
+        axes[3,2].set_title('fake_A')
+        axes[3,3].set_title('rec_B')
+        axes[3,4].set_title('idt_A')
 
             
         axes[0,0].imshow(pr(syn_image))
@@ -242,13 +349,25 @@ def plot_part4(img_dict, global_step, is_epoch=False, depth=True, stage='train')
         axes[0,2].imshow(pr_d(fake_B), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
         axes[0,3].imshow(pr_d(rec_A), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
         axes[0,4].imshow(pr_d(idt_B), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
-
+        
+        axes[1,0].imshow(pr(syn_image*0))
+        axes[1,1].imshow(pr(norm_syn*1000))
+        axes[1,2].imshow(pr(norm_fake_B*1000))
+        axes[1,3].imshow(pr(norm_rec_A*1000))
+        axes[1,4].imshow(pr(norm_idt_B*1000))
             
-        axes[1,0].imshow(pr(real_image))
-        axes[1,1].imshow(pr_d(real_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
-        axes[1,2].imshow(pr_d(fake_A), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
-        axes[1,3].imshow(pr_d(rec_B), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
-        axes[1,4].imshow(pr_d(idt_A), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        axes[2,0].imshow(pr(real_image))
+        axes[2,1].imshow(pr_d(real_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        axes[2,2].imshow(pr_d(fake_A), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        axes[2,3].imshow(pr_d(rec_B), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        axes[2,4].imshow(pr_d(idt_A), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        
+        
+        axes[3,0].imshow(pr(syn_image*0))
+        axes[3,1].imshow(pr(norm_real*1000))
+        axes[3,2].imshow(pr(norm_fake_A*1000))
+        axes[3,3].imshow(pr(norm_rec_B*1000))
+        axes[3,4].imshow(pr(norm_idt_A*1000))
         
 #         wandb.log({f"{stage}": fig}, step=global_step)
         wandb.log({f"chart": fig}, step=global_step)
@@ -261,7 +380,9 @@ def sum_of_dicts(dict1, dict2, l):
 if __name__ == '__main__':
     opt = TrainOptions().parse()   # get training options
     wandb.config.update(opt)
-    plot_function = plot_part4
+#     plot_function = plot_main_new_norm
+#     plot_function = plot_only_depth
+    plot_function = plot_cycle
 #     dataset = create_dataset(opt)  # create a dataset given opt.dataset_mode and other options
     dataset = create_dataset(opt, MyUnalignedDataset) 
     test_dataset = create_dataset(opt, MyUnalignedDataset, stage='test')
@@ -271,6 +392,10 @@ if __name__ == '__main__':
     print('The number of training images = %d' % dataset_size)
 
     model = CycleGANModel(opt)
+#     model = CycleGANModel_depth(opt)
+#     model = CycleGANModel_depth_by_image(opt)
+#     model = CycleGANModel_depth_new(opt)
+#     model = CycleGANModel_depth_new_norm(opt) 
     model.setup(opt)               # regular setup: load and print networks; create schedulers
 
     total_iters = opt.start_iter                # the total number of training iterations
@@ -282,7 +407,8 @@ if __name__ == '__main__':
 #         visualizer.reset()              # reset the visualizer: make sure it saves the results to HTML at least once every epoch
         
     
-
+        
+ 
 
 
         model._train()
@@ -318,11 +444,15 @@ if __name__ == '__main__':
                 save_suffix = 'iter_%d' % total_iters if opt.save_by_iter else 'latest'
                 model.save_networks(save_suffix)
 
+
+
         model.eval()
         stage = 'test'
         
         with torch.no_grad():
             mean_losses = OrderedDict([('D_A', 0.0), ('G_A', 0.0), ('cycle_A', 0.0), ('idt_A', 0.0), ('D_B', 0.0), ('G_B', 0.0), ('cycle_B', 0.0), ('idt_B', 0.0)])
+#             mean_losses = OrderedDict([('task_syn', 0.0), ('task_real', 0.0)])
+#             mean_losses = OrderedDict([('task_syn', 0.0), ('holes_syn', 0.0), ('task_real_by_depth', 0.0), ('task_real_by_image', 0.0), ('holes_real', 0.0)])
             l = len(test_dataset)
             for i, data in enumerate(test_dataset):  # inner loop within one epoch
                 test_iter += opt.batch_size
@@ -336,11 +466,9 @@ if __name__ == '__main__':
                     
                     
                 losses = model.get_current_losses()
-                mean_losses = sum_of_dicts(mean_losses, losses, l)  
+                mean_losses = sum_of_dicts(mean_losses, losses,  l/opt.batch_size*4)  
             wandb.log({stage:mean_losses}, step = total_iters)       
-            print(mean_losses)
-            
-            
+            print(mean_losses)               
             
 
 

@@ -64,16 +64,32 @@ class MyUnalignedDataset(BaseDataset):
         
         transform_list  = []
         
-        if self.opt.notscannet:
-            
-            transform_list.append(A.Resize(height=self.opt.load_size, width=self.opt.load_size, interpolation=4, p=1))
-            if self.opt.isTrain:
-                transform_list.append(A.Rotate(limit = [-30,30], p=0.8))
-                transform_list.append(A.RandomCrop(height=self.opt.crop_size, width=self.opt.crop_size, p=1))
-            transform_list.append(A.HorizontalFlip(p=0.5))
+#         if self.opt.notscannet:
+#         height =  self.opt.load_size
+#         width = self.opt.load_size
         
-        else:
-            transform_list.append(A.Resize(height=480, width=640, interpolation=4, p=1))
+#         height_c = self.opt.crop_size
+#         width_c = self.opt.crop_size
+
+
+        height =  432
+        width = 576
+        
+#         height_c = 384//2
+#         width_c = 512//2
+        
+        
+        height_c = 256
+        width_c = 320
+        
+        transform_list.append(A.Resize(height=height, width=width, interpolation=4, p=1))
+        if self.opt.isTrain:
+            transform_list.append(A.Rotate(limit = [-30,30], p=0.8))
+            transform_list.append(A.RandomCrop(height=height_c, width=width_c, p=1))
+        transform_list.append(A.HorizontalFlip(p=0.5))
+        
+
+#         transform_list.append(A.Resize(height=480, width=640, interpolation=4, p=1))
         transformed = self.apply_transformer(transform_list, img, depth)
         
         img = np.clip(transformed['image'], -1, 1)
@@ -157,20 +173,23 @@ class MyUnalignedDataset(BaseDataset):
             A_paths (str)    -- image paths
             B_paths (str)    -- image paths
         """
-        A_path = self.A_paths[index % self.A_size]  # make sure index is within then range
-        index_B = random.randint(0, self.B_size - 1)
-        if self.opt.notscannet:
-            B_path = self.B_paths[index_B]
-        else:
-            B_path = self.B_paths[index % self.B_size]     
-   
+#         index_A = index % self.A_size
+#         A_path = self.A_paths[index_A]  # make sure index is within then range
+#         index_B = random.randint(0, self.B_size - 1)
+#         B_path = self.B_paths[index_B]
+
+        index_B = index % self.B_size
+        B_path = self.B_paths[index_B]
+        index_A = random.randint(0, self.A_size - 1)
+        A_path = self.A_paths[index_A]
+        
         if self.opt.image_and_depth:
             
             A_depth = np.array(Image.open(A_path))
-            B_depth = np.array(np.load(B_path)).astype(np.float32) if self.opt.notscannet else np.array(Image.open(B_path))
+            B_depth = np.array(Image.open(B_path)) if self.opt.use_scannet else np.array(np.load(B_path)).astype(np.float32) 
 
             jitter = transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1)
-            A_img = np.array(jitter(Image.open(self.A_add_paths[index % self.A_size])).convert('RGB')).astype(np.float32)
+            A_img = np.array(jitter(Image.open(self.A_add_paths[index_A])).convert('RGB')).astype(np.float32)
             B_img = np.array(jitter(Image.open(self.B_add_paths[index_B])).convert('RGB')).astype(np.float32)
 
 #             A_img = np.array(Image.open(self.A_add_paths[index % self.A_size]).convert('RGB')).astype(np.float32)
@@ -187,6 +206,6 @@ class MyUnalignedDataset(BaseDataset):
         As we have two datasets with potentially different number of images,
         we take a maximum of
         """
-        return min( self.A_size, self.B_size)  #if self.opt.direction=='AtoB' else self.B_size
+        return max( self.A_size, self.B_size)  #if self.opt.direction=='AtoB' else self.B_size
 
     
