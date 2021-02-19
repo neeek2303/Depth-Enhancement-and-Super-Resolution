@@ -121,44 +121,20 @@ def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[]):
     return net
 
 
-def define_net(input_nc, output_nc, ngf, net_type, norm='batch', use_dropout=False, init_type='normal', init_gain=0.02, gpu_ids=[], replace_transpose=False, n_down = 2):
-    """Create a generator
+def define_net(net_type, norm='batch',init_type='normal', init_gain=0.02, gpu_ids=[]):
 
-    Parameters:
-        input_nc (int) -- the number of channels in input images
-        output_nc (int) -- the number of channels in output images
-        ngf (int) -- the number of filters in the last conv layer
-        netG (str) -- the architecture's name: resnet_9blocks | resnet_6blocks | unet_256 | unet_128
-        norm (str) -- the name of normalization layers used in the network: batch | instance | none
-        use_dropout (bool) -- if use dropout layers.
-        init_type (str)    -- the name of our initialization method.
-        init_gain (float)  -- scaling factor for normal, xavier and orthogonal.
-        gpu_ids (int list) -- which GPUs the network runs on: e.g., 0,1,2
-
-    Returns a generator
-
-    Our current implementation provides two types of generators:
-        U-Net: [unet_128] (for 128x128 input images) and [unet_256] (for 256x256 input images)
-        The original U-Net paper: https://arxiv.org/abs/1505.04597
-
-        Resnet-based generator: [resnet_6blocks] (with 6 Resnet blocks) and [resnet_9blocks] (with 9 Resnet blocks)
-        Resnet-based generator consists of several Resnet blocks between a few downsampling/upsampling operations.
-        We adapt Torch code from Justin Johnson's neural style transfer project (https://github.com/jcjohnson/fast-neural-style).
-
-
-    The generator has been initialized by <init_net>. It uses RELU for non-linearity.
-    """
     net = None
     norm_layer = get_norm_layer(norm_type=norm)
 
     if net_type == 'EncoderDepth':
-        net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=9, replace_transpose=replace_transpose, n_downsampling = n_down)
-    elif net_type == 'DenseNet':
-        net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=6, replace_transpose=replace_transpose, n_downsampling = n_down)
-    elif net_type == 'unet_128':
-        net = UnetGenerator(input_nc, output_nc, 7, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
+        net = EncoderDepth(input_nc=1, ngf=4, norm_layer=nn.BatchNorm2d, use_bias = False, use_dropout=False,  padding_type='reflect',  down=5)
+    elif net_type == 'EncoderImage':
+        net = DenseNet(start_dims=64, growth_rate=32, reduction=0.5, bottleneck=True, dropRate=0.0, ns=[6,12,24,16])
+    elif net_type == 'Decoder':
+        net = Decoder(norm_layer=nn.BatchNorm2d, use_bias = False,  up_layers=5, start_dim = 64,  growth_rate=32, ns = [6,12,24,16], dims_d = [4, 8, 16, 32, 64, 64], reduction=0.5)
     else:
         raise NotImplementedError('Generator model name [%s] is not recognized' % netG)
+#     print(gpu_ids)    
     return init_net(net, init_type, init_gain, gpu_ids)
 
 
@@ -189,14 +165,14 @@ class Convs(nn.Module):
         return self.model(input)
 
 class EncoderDepth(nn.Module):
-    def __init__(self, input_nc, output_nc, ngf=16, norm_layer=nn.BatchNorm2d, use_bias = False, use_dropout=False,  padding_type='reflect',  down=5):
+    def __init__(self, input_nc=1, ngf=4, norm_layer=nn.BatchNorm2d, use_bias = False, use_dropout=False,  padding_type='reflect',  down=5):
         super().__init__()
 
 
-        self.first_convs = nn.Sequential(nn.Conv2d(input_nc, ngf, kernel_size=3, padding=1),
+        self.first_convs = nn.Sequential(nn.Conv2d(input_nc, ngf, kernel_size=3, padding=1, bias=use_bias),
                  norm_layer(ngf),
                  nn.ReLU(True),
-                 nn.Conv2d(input_nc, ngf, kernel_size=3, padding=1),
+                 nn.Conv2d(ngf, ngf, kernel_size=3, padding=1),
                  norm_layer(ngf),
                  nn.ReLU(True))
 
@@ -204,82 +180,102 @@ class EncoderDepth(nn.Module):
         mult = 1
         for i in range(down):
             mult*= 2
-            new_block = nn.Sequential(nn.Conv2d(ngf * mult, ngf * mult, kernel_size=3, stride=1, padding=1, bias=use_bias),
-                                      norm_layer(ngf * mult),
-                                      nn.ReLU(True),
-                                      
-                                      nn.Conv2d(ngf * mult, ngf * mult, kernel_size=3, stride=1, padding=1, bias=use_bias),
-                                      norm_layer(ngf * mult),
-                                      nn.ReLU(True),
+            new_block = nn.Sequential(nn.Conv2d(min(ngf * mult//2, 64), min(ngf * mult, 64), kernel_size=3, stride=1, padding=1, bias=use_bias),
+#                                       norm_layer(ngf * mult),
+#                                       nn.ReLU(True),
+                                      nn.LeakyReLU(0.2, True), 
+                                      nn.Conv2d(min(ngf * mult, 64), min(ngf * mult,64), kernel_size=3, stride=1, padding=1, bias=use_bias),
+#                                       norm_layer(ngf * mult),
+#                                       nn.ReLU(True),
+                                      nn.LeakyReLU(0.2, True), 
                                       nn.MaxPool2d(kernel_size=2))
             self.blocks.append(new_block) 
+            
+            
+        self.blocks = nn.ModuleList(self.blocks)
 
-
-    def forward(self, input):
+    def forward(self, x):
 
         outputs = []
-        outputs.append(self.first_convs(input))
+        outputs.append(self.first_convs(x))
+
         for block in self.blocks:
-            outputs.append(block(outputs[-1]))
+            out = block(outputs[-1])
+            outputs.append(out)
         
         return outputs
 
     
 class Decoder(nn.Module):
-    def __init__(self, input_nc, output_nc=3, ngf=64, norm_layer=nn.BatchNorm2d, use_bias = False, use_dropout=False,  padding_type='reflect',  up_layers=4, start_dim = 32,  growth_rate=32, ns = [6,12,24,16],
+    def __init__(self, norm_layer=nn.BatchNorm2d, use_bias = True,  up_layers=5, start_dim = 64,  growth_rate=32, ns = [6,12,24,16], dims_d = [4, 8, 16, 32, 64, 64], 
                  reduction=0.5):
         super().__init__()
 
-
-        a= start_dims
+ 
+        a= start_dim
         k= growth_rate
         n = ns
         l = 4
         r = reduction
-        dims_im =[3, start_dims]
+        dims_im =[3, start_dim]
         for i in range(0,l):
             a = a+k*n[i]
             a=int(a*r)
-            dims.append(a)
-            
-        dims_d = [8, 16, 32, 64, 128, 256]    
+            dims_im.append(a)
+              
         
-        curr_dim = dims_d[0] + dims_im[0]
+        curr_dim = dims_d[-1] + dims_im[-1]
         self.first_convs = nn.Sequential(nn.Conv2d(curr_dim, curr_dim//2, kernel_size=3, padding=1),
-                                         norm_layer(ngf),
-                                         nn.ReLU(True),
-                                         nn.Upsample(scale_factor = 2, mode='nearest'))
+#                                          norm_layer(curr_dim//2),
+#                                          nn.ReLU(True),
+                                         nn.LeakyReLU(0.2, True), 
+                                         nn.Upsample(scale_factor = 2, mode='bicubic'))
         curr_dim = curr_dim//2
-        self.blocks = [self.first_convs]
+        self.blocks = []
         mult = 1
-        for i in range(up_layers):
-            curr_dim = curr_dim + dims_d[i+1] + dims_d[i+1]
+        for i in range(up_layers-1):
+            curr_dim = curr_dim + dims_im[-(i+2)] + dims_d[-(i+2)]
             new_block = nn.Sequential(nn.Conv2d(curr_dim, curr_dim, kernel_size=3, stride=1, padding=1, bias=use_bias),
-                                      norm_layer(ngf),
-                                      nn.ReLU(True),
+#                                       norm_layer(curr_dim),
+#                                       nn.ReLU(True),
+                                      nn.LeakyReLU(0.2, True),
                 
                                       nn.Conv2d(curr_dim, curr_dim//2, kernel_size=3, stride=1, padding=1, bias=use_bias),
-                                      norm_layer(ngf * mult),
-                                      nn.ReLU(True),                
-                                      nn.Upsample(scale_factor = 2, mode='nearest'))
+#                                       norm_layer(curr_dim//2),
+#                                       nn.ReLU(True),
+                                      nn.LeakyReLU(0.2, True),               
+                                      nn.Upsample(scale_factor = 2, mode='bicubic'))
             curr_dim=curr_dim//2
             self.blocks.append(new_block) 
+        
+        curr_dim = curr_dim + dims_im[0] + dims_d[0]
+        self.last_convs = nn.Sequential(nn.Conv2d(curr_dim, curr_dim//2, kernel_size=3, stride=1, padding=1, bias=use_bias),
+#                                       norm_layer(curr_dim//2),
+#                                       nn.ReLU(True),
+                                      nn.LeakyReLU(0.2, True),    
+                                      nn.Conv2d(curr_dim//2, 1, kernel_size=3, padding=1),
+                                      nn.Tanh())
+        self.blocks.append(self.last_convs)
+        self.blocks = nn.ModuleList(self.blocks)
 
+    def forward(self, x, y):
+        
+#         print(x[-1].shape, x[-2].shape, x[-3].shape, x[-4].shape)
+#         print(y[-1].shape, y[-2].shape, y[-3].shape, y[-4].shape)
+        out = self.first_convs(torch.cat([x[-1],y[-1]], dim=1))
+        
+        for idx, block in enumerate(self.blocks):
+            new_input = torch.cat([x[-(idx+2)],y[-(idx+2)], out], dim=1)
+            out = block(new_input)
 
-    def forward(self, x):
-
-        outputs = [input]
-        for block in self.blocks:
-            outputs.append(block(outputs[-1]))
-
-        return outputs   
+        return out   
 
     
     
     
-nn.Upsample(scale_factor = 2, mode='nearest')
-nn.ReflectionPad2d(1),
-nn.ReplicationPad2d(1)
+# nn.Upsample(scale_factor = 2, mode='nearest')
+# nn.ReflectionPad2d(1),
+# nn.ReplicationPad2d(1)
     
 
 class BasicBlock(nn.Module):
@@ -347,17 +343,18 @@ class DenseBlock(nn.Module):
         return self.layer(x)
 
 class DenseNet(nn.Module):
-    def __init__(self, depth, num_classes, start_dims=32, growth_rate=32,
-                 reduction=0.5, bottleneck=True, dropRate=0.0):
+    def __init__(self, start_dims=64, growth_rate=32,
+                 reduction=0.5, bottleneck=True, dropRate=0.0, ns=[6,12,24,16]):
         super(DenseNet, self).__init__()
+        
         in_planes = start_dims
 #         n = (depth - 5) / 4
-        n = depth
+#         n = depth
         if bottleneck == True:
             block = BottleneckBlock
         else:
             block = BasicBlock
-        n = int(n)
+#         n = int(n)
 
 
         # 1st conv before any dense block
@@ -365,25 +362,31 @@ class DenseNet(nn.Module):
                                padding=1, bias=False)
         self.maxpool1 = nn.MaxPool2d(kernel_size=2)
         
+
+        
         # 1st block
+        n = int(ns[0])
         self.block1 = DenseBlock(n, in_planes, growth_rate, block, dropRate)
         in_planes = int(in_planes+n*growth_rate)
         self.trans1 = TransitionBlock(in_planes, int(math.floor(in_planes*reduction)), dropRate=dropRate)
         in_planes = int(math.floor(in_planes*reduction))
         
         # 2nd block
+        n = int(ns[1])
         self.block2 = DenseBlock(n, in_planes, growth_rate, block, dropRate)
         in_planes = int(in_planes+n*growth_rate)
         self.trans2 = TransitionBlock(in_planes, int(math.floor(in_planes*reduction)), dropRate=dropRate)
         in_planes = int(math.floor(in_planes*reduction))
         
         # 3rd block
+        n = int(ns[2])
         self.block3 = DenseBlock(n, in_planes, growth_rate, block, dropRate)
         in_planes = int(in_planes+n*growth_rate)
         self.trans3 = TransitionBlock(in_planes, int(math.floor(in_planes*reduction)), dropRate=dropRate)
         in_planes = int(math.floor(in_planes*reduction))
         
         # 4th block
+        n = int(ns[3])
         self.block4 = DenseBlock(n, in_planes, growth_rate, block, dropRate)
         in_planes = int(in_planes+n*growth_rate)
         self.trans4 = TransitionBlock(in_planes, int(math.floor(in_planes*reduction)), dropRate=dropRate)

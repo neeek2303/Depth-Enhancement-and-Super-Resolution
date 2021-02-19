@@ -505,7 +505,7 @@ class UnetGenerator(nn.Module):
         # gradually reduce the number of filters from ngf * 8 to ngf
         unet_block = UnetSkipConnectionBlock(ngf * 4, ngf * 8, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
         unet_block = UnetSkipConnectionBlock(ngf * 2, ngf * 4, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
-        unet_block = UnetSkipConnectionBlock(ngf, ngf * 2, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
+        unet_block = UnetSkipConnectionBlock(ngf, ngf * 2, input_nc=None, submodule=unet_block,  norm_layer=norm_layer)
         self.model = UnetSkipConnectionBlock(output_nc, ngf, input_nc=input_nc, submodule=unet_block, outermost=True, norm_layer=norm_layer)  # add the outermost layer
 
     def forward(self, input):
@@ -543,7 +543,7 @@ class UnetSkipConnectionBlock(nn.Module):
             input_nc = outer_nc
         downconv = nn.Conv2d(input_nc, inner_nc, kernel_size=4,
                              stride=2, padding=1, bias=use_bias)
-        downrelu = nn.LeakyReLU(0.2, True)
+        downrelu = nn.LeakyReLU(0.2, False)
         downnorm = norm_layer(1, inner_nc)
         uprelu = nn.ReLU(True)
         upnorm = norm_layer(1, outer_nc)

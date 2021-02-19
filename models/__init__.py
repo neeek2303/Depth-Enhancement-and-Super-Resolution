@@ -29,6 +29,7 @@ def find_model_using_name(model_name):
     be instantiated. It has to be a subclass of BaseModel,
     and it is case-insensitive.
     """
+    print(model_name)
     model_filename = "models." + model_name + "_model"
     modellib = importlib.import_module(model_filename)
     model = None

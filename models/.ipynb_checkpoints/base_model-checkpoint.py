@@ -203,7 +203,15 @@ class BaseModel(ABC):
                     # patch InstanceNorm checkpoints prior to 0.4
                     for key in list(state_dict.keys()):  # need to copy keys here because we mutate in loop
                         self.__patch_instance_norm_state_dict(state_dict, net, key.split('.'))
-                    net.load_state_dict(state_dict)
+#                     net.load_state_dict(state_dict)
+                    
+                    net_dict = net.state_dict()
+                    for key in list(net_dict.keys()):  # need to copy keys here because we mutate in loop
+                        self.__patch_instance_norm_state_dict(net_dict, net, key.split('.'))
+                    state_dict = {k: v for k, v in state_dict.items() if k in net_dict}
+                    net_dict.update(state_dict) 
+                    net.load_state_dict(net_dict)
+                    
                 except:
                     pass
 

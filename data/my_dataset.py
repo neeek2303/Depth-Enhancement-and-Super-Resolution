@@ -39,15 +39,15 @@ class MyUnalignedDataset(BaseDataset):
             res = A.Compose(transformations, p=1, additional_targets=target)(image=img, depth=depth)
         return res
     
-    def trasform(self, depth, img, semantic=None):
+    def trasform(self, depth, img, full=True, train=True):
         
 
         img = img.astype(np.float32)
         img = (img - 127.5) / 127.5   #HYPERPRAM
 #         print(depth.dtype, np.min(depth), np.mean(depth), np.max(depth))
-        meters = 10 if self.opt.notscannet else 8
+        meters = 5100 
         if depth.dtype == np.int32:
-            m_in_mm = meters*1000
+            m_in_mm = meters
             depth = np.where(depth>m_in_mm, m_in_mm, depth)/m_in_mm
             depth = depth*2 - 1
 
@@ -72,22 +72,35 @@ class MyUnalignedDataset(BaseDataset):
 #         width_c = self.opt.crop_size
 
 
-        height =  432
-        width = 576
+        height =  480
+        width = 640
         
-#         height_c = 384//2
-#         width_c = 512//2
+#         height =  432
+#         width = 576
         
+        height_c = 384
+        width_c = 512
         
-        height_c = 256
-        width_c = 320
+#         height_c = 320
+#         width_c = 320
         
-        transform_list.append(A.Resize(height=height, width=width, interpolation=4, p=1))
-        if self.opt.isTrain:
-            transform_list.append(A.Rotate(limit = [-30,30], p=0.8))
-            transform_list.append(A.RandomCrop(height=height_c, width=width_c, p=1))
-        transform_list.append(A.HorizontalFlip(p=0.5))
-        
+        transform_list = []
+#         transform_list.append(A.Resize(height=height, width=width, interpolation=4, p=1))
+        if train:
+            if full:
+                transform_list.append(A.Resize(height=height, width=width, interpolation=4, p=1))
+            else:
+                transform_list.append(A.Resize(height=320, width=320, interpolation=4, p=1))
+                transform_list.append(A.PadIfNeeded(322, 322, p=1))
+
+            if self.opt.isTrain:
+
+                transform_list.append(A.Rotate(limit = [-15,15], p=0.8))
+                transform_list.append(A.RandomCrop(height=height_c, width=width_c, p=1))
+            transform_list.append(A.HorizontalFlip(p=0.5))
+        else:
+            transform_list.append(A.Resize(height=height, width=width, interpolation=4, p=1))
+            transform_list.append(A.PadIfNeeded(512, 640, p=1))
 
 #         transform_list.append(A.Resize(height=480, width=640, interpolation=4, p=1))
         transformed = self.apply_transformer(transform_list, img, depth)
@@ -118,8 +131,9 @@ class MyUnalignedDataset(BaseDataset):
         if opt.image_and_depth:
             self.dir_A_add = os.path.join(opt.A_add_paths)  # create a path '/path/to/data/trainA'
             self.dir_B_add = os.path.join(opt.B_add_paths)  # create a path '/path/to/data/trainB'
-        
+        self.train = True
         if stage=='test':
+            self.train = False
             self.dir_A = os.path.join(opt.path_A_test)  # create a path '/path/to/data/trainA'
             self.dir_B = os.path.join(opt.path_B_test)  # create a path '/path/to/data/trainB'
 
@@ -151,16 +165,18 @@ class MyUnalignedDataset(BaseDataset):
             if opt.image_and_depth:
                 self.A_add_paths = sorted(make_dataset(self.dir_A_add, opt.max_dataset_size))   
                 self.B_add_paths = sorted(glob.glob(f'{self.dir_B_add}/*'))  # load images from '/path/to/data/trainB'
-        
-        print(len(self.A_paths),len(self.B_paths),len(self.A_add_paths),len(self.B_add_paths))        
+            
         self.A_size = len(self.A_paths)  # get the size of dataset A
         self.B_size = len(self.B_paths)  # get the size of dataset B
         btoA = self.opt.direction == 'BtoA'
         input_nc = self.opt.output_nc if btoA else self.opt.input_nc       # get the number of channels of input image
         output_nc = self.opt.input_nc if btoA else self.opt.output_nc      # get the number of channels of output image
-        self.transform_A = get_transform(self.opt, grayscale=False)
-        self.transform_B = get_transform(self.opt, grayscale=False)
 
+    def get_imp_matrx(self, f_name):
+        f_name = f_name.split('/')[-1].split('.')[0]
+        K = np.loadtxt(os.path.join('/mnt/neuro/un_depth/Scannet/', f_name[:12], 'intrinsic', 'intrinsic_depth.txt'))[:3,:3]
+        return K
+    
     def __getitem__(self, index):
         """Return a data point and its metadata information.
 
@@ -173,32 +189,43 @@ class MyUnalignedDataset(BaseDataset):
             A_paths (str)    -- image paths
             B_paths (str)    -- image paths
         """
-        index_A = index % self.A_size
-        A_path = self.A_paths[index_A]  # make sure index is within then range
-        index_B = random.randint(0, self.B_size - 1)
-        B_path = self.B_paths[index_B]
-
-#         index_B = index % self.B_size
+#         index_A = index % self.A_size
+#         A_path = self.A_paths[index_A]  # make sure index is within then range
+#         index_B = random.randint(0, self.B_size - 1)
 #         B_path = self.B_paths[index_B]
-#         index_A = random.randint(0, self.A_size - 1)
-#         A_path = self.A_paths[index_A]
+
+        index_B = index % self.B_size
+        B_path = self.B_paths[index_B]
+        index_A = random.randint(0, self.A_size - 1)
+        A_path = self.A_paths[index_A]
         
+
         if self.opt.image_and_depth:
             
             A_depth = np.array(Image.open(A_path))
             B_depth = np.array(Image.open(B_path)) if self.opt.use_scannet else np.array(np.load(B_path)).astype(np.float32) 
 
-            jitter = transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1)
-            A_img = np.array(jitter(Image.open(self.A_add_paths[index_A])).convert('RGB')).astype(np.float32)
-            B_img = np.array(jitter(Image.open(self.B_add_paths[index_B])).convert('RGB')).astype(np.float32)
+#             jitter = transforms.ColorJitter(brightness=0.05, contrast=0.05, saturation=0.05, hue=0.05)
+#             A_img = np.array(jitter(Image.open(self.A_add_paths[index_A])).convert('RGB')).astype(np.float32)
+#             B_img = np.array(jitter(Image.open(self.B_add_paths[index_B])).convert('RGB')).astype(np.float32)
 
-#             A_img = np.array(Image.open(self.A_add_paths[index % self.A_size]).convert('RGB')).astype(np.float32)
-#             B_img = np.array(Image.open(self.B_add_paths[index_B]).convert('RGB')).astype(np.float32)
+            A_img = np.array(Image.open(self.A_add_paths[index_A])).astype(np.float32)
+            B_img = np.array(Image.open(self.B_add_paths[index_B])).astype(np.float32)
             
-            A_depth, A_img, = self.trasform(A_depth, A_img)
-            B_depth, B_img, = self.trasform(B_depth, B_img)
-
-        return {'A_i': A_img, 'B_i': B_img, 'A_d': A_depth, 'B_d': B_depth, 'A_paths': A_path, 'B_paths': B_path}
+            A_depth, A_img, = self.trasform(A_depth, A_img, train =self.train)
+            B_depth, B_img, = self.trasform(B_depth, B_img, train =self.train)
+#             print(A_path)
+            K_A = self.get_imp_matrx(A_path)
+            K_B = self.get_imp_matrx(B_path)
+            
+            if self.train:
+                crop_A = np.array([0, 384, 0, 512])
+                crop_B = np.array([0, 384, 0, 512])
+            else:
+                crop_A = np.array([0, 512, 0, 640])
+                crop_B = np.array([0, 512, 0, 640])                
+            
+        return {'A_i': A_img, 'B_i': B_img, 'A_d': A_depth, 'B_d': B_depth, 'A_paths': A_path, 'B_paths': B_path, 'K_A': K_A, 'K_B': K_B, 'crop_A': crop_A, 'crop_B': crop_B}
 
     def __len__(self):
         """Return the total number of images in the dataset.
@@ -206,6 +233,7 @@ class MyUnalignedDataset(BaseDataset):
         As we have two datasets with potentially different number of images,
         we take a maximum of
         """
-        return min( self.A_size, self.B_size)  #if self.opt.direction=='AtoB' else self.B_size
+        print(self.A_size, self.B_size)
+        return min(self.A_size, self.B_size)  #if self.opt.direction=='AtoB' else self.B_size
 
     
