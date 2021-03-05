@@ -431,7 +431,7 @@ class MainNetworkBestSR2Model(BaseModel):
             for i in range(batch_size):
                 path = str(self.B_paths[i])
                 path = path.split('/')[-1].split('.')[0]
-                file = f'/root/callisto/depth_SR/test_pred_up_sr_1/{path}.png'
+                file = f'/root/callisto/depth_SR/test_pred_up_sr/{path}.png'
 #                 ou=self.pred_real_depth[i][:,16:-16,:]
 #                 print(ou.shape)
                 out_np = post(self.pred_real_depth_hr[i][:,32:-32,:].cpu().detach())*5100

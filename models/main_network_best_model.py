@@ -219,7 +219,7 @@ class MainNetworkBestModel(BaseModel):
             self.criterionGAN = networks.GANLoss(opt.gan_mode).to(self.device)  # define GAN loss.
             
 
-            self.optimizer_G = torch.optim.Adam(itertools.chain(self.netDepth_f_real.parameters(), self.netDepth_f_syn.parameters(), self.netTask.parameters()), lr=opt.lr)
+            self.optimizer_G = torch.optim.Adam(itertools.chain( self.netTask.parameters()), lr=opt.lr)
             self.optimizers.append(self.optimizer_G)
             if self.opt.use_D:
                 self.optimizer_D = torch.optim.Adam(itertools.chain(self.netD_depth.parameters()), lr=opt.lr, betas=(opt.beta1, 0.999))

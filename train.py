@@ -28,13 +28,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 wandb.init(project="translation_compare")
 # from models.main_network_model import MainNetworkModel
-from models.main_network_best_model import MainNetworkBestModel
+# from models.main_network_best_model import MainNetworkBestModel
 # from models.main_network_best_sr1_model import MainNetworkBestSR1Model
-# from models.main_network_best_sr2_model import MainNetworkBestSR2Model
-from models.translation_model import TranslationModel
-from models.I2D_model import I2DModel
+from models.main_network_best_sr2_model import MainNetworkBestSR2Model
+# from models.translation_model import TranslationModel
+# from models.I2D_model import I2DModel
 # from models.depth_by_image import Depth_by_Image
-from data.my_dataset import MyUnalignedDataset
+# from data.my_dataset import MyUnalignedDataset
+from data.my_up_dataset import MyUnalignedDataset
 # from data.my_naive_sr_dataset import MyUnalignedDataset
 # from data.my_I2D_dataset import MyUnalignedDataset
 # from data.my_translation_dataset import MyUnalignedDataset
@@ -471,9 +472,9 @@ def call_it():
 if __name__ == '__main__':
     opt = TrainOptions().parse()   # get training options
     wandb.config.update(opt)
-#     plot_function = plot_main_new_norm
+    plot_function = plot_main_new_norm
 #     plot_function = plot_cycle
-    plot_function = plot_I2D
+#     plot_function = plot_I2D
 # 
     dataset = create_dataset(opt, MyUnalignedDataset) 
     test_dataset = create_dataset(opt, MyUnalignedDataset, stage='test')
@@ -486,7 +487,8 @@ if __name__ == '__main__':
 #     model = MainNetworkModel(opt)
 #     model = MainNetworkBestModel(opt)
 #     model = MainNetworkBestSR1Model(opt)
-    model = I2DModel(opt)
+    model = MainNetworkBestSR2Model(opt)
+#     model = I2DModel(opt)
 
     model.setup(opt)               # regular setup: load and print networks; create schedulers
 
@@ -537,7 +539,7 @@ if __name__ == '__main__':
 #                 if opt.display_id > 0:
 #                     visualizer.plot_current_losses(epoch, float(epoch_iter) / dataset_size, losses)
 
-            if (total_iters-opt.start_iter)  % 500*opt.batch_size == 0:   # cache our latest model every <save_latest_freq> iterations
+            if (total_iters-opt.start_iter)  % 1000*opt.batch_size == 0:   # cache our latest model every <save_latest_freq> iterations
                 print('saving the latest model (epoch %d, total_iters %d)' % (epoch, total_iters))
                 save_suffix = 'iter_%d' % total_iters if opt.save_by_iter else 'latest'
                 model.save_networks(save_suffix)
