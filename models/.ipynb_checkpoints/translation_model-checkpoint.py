@@ -7,62 +7,9 @@ import numpy as np
 import imageio
 import torch.nn as nn
 
-class SurfaceNormals(nn.Module):
-    
-    def __init__(self):
-        super(SurfaceNormals, self).__init__()
-    
-    def forward(self, depth):
-        dzdx = -self.gradient_for_normals(depth, axis=2)
-        dzdy = -self.gradient_for_normals(depth, axis=3)
-        norm = torch.cat((dzdx, dzdy, torch.ones_like(depth)), dim=1)
-        n = torch.norm(norm, p=2, dim=1, keepdim=True)
-        return norm / (n + 1e-6)
-    
-    def gradient_for_normals(self, f, axis=None):
-        N = f.ndim  # number of dimensions
-        dx = 1.0
-    
-        # use central differences on interior and one-sided differences on the
-        # endpoints. This preserves second order-accuracy over the full domain.
-        # create slice objects --- initially all are [:, :, ..., :]
-        slice1 = [slice(None)]*N
-        slice2 = [slice(None)]*N
-        slice3 = [slice(None)]*N
-        slice4 = [slice(None)]*N
-    
-        otype = f.dtype
-        if otype is torch.float32:
-            pass
-        else:
-            raise TypeError('Input shold be torch.float32')
-    
-        # result allocation
-        out = torch.empty_like(f, dtype=otype)
-    
-        # Numerical differentiation: 2nd order interior
-        slice1[axis] = slice(1, -1)
-        slice2[axis] = slice(None, -2)
-        slice3[axis] = slice(1, -1)
-        slice4[axis] = slice(2, None)
-    
-        out[tuple(slice1)] = (f[tuple(slice4)] - f[tuple(slice2)]) / (2. * dx)
-    
-        # Numerical differentiation: 1st order edges
-        slice1[axis] = 0
-        slice2[axis] = 1
-        slice3[axis] = 0
-        dx_0 = dx 
-        # 1D equivalent -- out[0] = (f[1] - f[0]) / (x[1] - x[0])
-        out[tuple(slice1)] = (f[tuple(slice2)] - f[tuple(slice3)]) / dx_0
+from .norms import SurfaceNormals_new, get_imp_matrx, SurfaceNormals
 
-        slice1[axis] = -1
-        slice2[axis] = -1
-        slice3[axis] = -2
-        dx_n = dx 
-        # 1D equivalent -- out[-1] = (f[-1] - f[-2]) / (x[-1] - x[-2])
-        out[tuple(slice1)] = (f[tuple(slice2)] - f[tuple(slice3)]) / dx_n
-        return out
+
 
 
 class TranslationModel(BaseModel):
@@ -98,10 +45,14 @@ class TranslationModel(BaseModel):
         """
         parser.set_defaults(no_dropout=True)  # default CycleGAN did not use dropout
         if is_train:
-            parser.add_argument('--lambda_A', type=float, default=10.0, help='weight for cycle loss (A -> B -> A)')
-            parser.add_argument('--lambda_B', type=float, default=10.0, help='weight for cycle loss (B -> A -> B)')
-            parser.add_argument('--lambda_identity_A', type=float, default=0.5, help='use identity mapping. Setting lambda_identity other than 0 has an effect of scaling the weight of the identity mapping loss. For example, if the weight of the identity loss should be 10 times smaller than the weight of the reconstruction loss, please set lambda_identity = 0.1')
-            parser.add_argument('--lambda_identity_B', type=float, default=0.5, help='use identity mapping. Setting lambda_identity other than 0 has an effect of scaling the weight of the identity mapping loss. For example, if the weight of the identity loss should be 10 times smaller than the weight of the reconstruction loss, please set lambda_identity = 0.1')
+            parser.add_argument('--lambda_A', type=float, default=10, help='weight for cycle loss (A -> B -> A)')
+            parser.add_argument('--lambda_B', type=float, default=10, help='weight for cycle loss (B -> A -> B)')
+            parser.add_argument('--lambda_range_mean_real', type=float, default=2, help='weight for cycle loss (A -> B -> A)')
+            parser.add_argument('--lambda_range_mean_syn', type=float, default=2, help='weight for cycle loss (A -> B -> A)')
+            parser.add_argument('--lambda_range_L2_real', type=float, default=5, help='weight for cycle loss (B -> A -> B)')
+            parser.add_argument('--lambda_range_L2_syn', type=float, default=5, help='weight for cycle loss (B -> A -> B)')
+            parser.add_argument('--lambda_identity_A', type=float, default=1, help='use identity mapping. Setting lambda_identity other than 0 has an effect of scaling the weight of the identity mapping loss. For example, if the weight of the identity loss should be 10 times smaller than the weight of the reconstruction loss, please set lambda_identity = 0.1')
+            parser.add_argument('--lambda_identity_B', type=float, default=1, help='use identity mapping. Setting lambda_identity other than 0 has an effect of scaling the weight of the identity mapping loss. For example, if the weight of the identity loss should be 10 times smaller than the weight of the reconstruction loss, please set lambda_identity = 0.1')
 
         return parser
 
@@ -114,7 +65,7 @@ class TranslationModel(BaseModel):
         BaseModel.__init__(self, opt)
         self.opt = opt
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
-        self.loss_names = ['D_A', 'G_A', 'cycle_A', 'idt_A', 'D_B', 'G_B', 'cycle_B', 'idt_B', 'idt_A_norm', 'idt_B_norm', 'cycle_A_norm', 'cycle_B_norm']
+        self.loss_names = ['D_A', 'G_A', 'cycle_A', 'idt_A', 'D_B', 'G_B', 'cycle_B', 'idt_B', 'idt_A_norm', 'idt_B_norm', 'cycle_A_norm', 'cycle_B_norm', 'range_real', 'range_syn', 'range_real_mean', 'range_syn_mean' ]
         if self.opt.use_rec_iou_error:
             self.loss_names+=['iou_rec']
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
@@ -160,6 +111,7 @@ class TranslationModel(BaseModel):
             # define loss functions
             self.criterionGAN = networks.GANLoss(opt.gan_mode).to(self.device)  # define GAN loss.
             self.criterionCycle = torch.nn.L1Loss()
+            self.criterionRange = torch.nn.MSELoss()
             self.criterionIdt = torch.nn.L1Loss()
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
             self.optimizer_G = torch.optim.Adam(itertools.chain(self.netG_A.parameters(), self.netG_B.parameters()), lr=opt.lr, betas=(opt.beta1, 0.999))
@@ -184,7 +136,10 @@ class TranslationModel(BaseModel):
         
         self.A_paths = input['A_paths']
         self.B_paths = input['B_paths']
-    
+#         self.K_A = input['K_A']
+#         self.K_B = input['K_B']
+#         self.crop_A = input['crop_A']
+#         self.crop_B = input['crop_B']    
         
         self.input_syn = self.syn_depth
         self.input_real = self.real_depth
@@ -220,16 +175,30 @@ class TranslationModel(BaseModel):
         
         
         
+#         if self.opt.norm_loss:
+#             calc_norm = SurfaceNormals_new()
+#             self.norm_syn = calc_norm((self.syn_depth+1)/2, self.K_A, self.crop_A)
+#             self.norm_idt_B = calc_norm((self.idt_B+1)/2, self.K_A, self.crop_A)
+#             self.norm_fake_B = calc_norm((self.fake_B+1)/2, self.K_A, self.crop_A)
+#             self.norm_rec_A = calc_norm((self.rec_A+1)/2, self.K_A, self.crop_A)
+            
+#             calc_norm = SurfaceNormals_new()
+#             self.norm_fake_A = calc_norm((self.fake_A+1)/2, self.K_B, self.crop_B)
+#             self.norm_rec_B = calc_norm((self.rec_B+1)/2, self.K_B, self.crop_B)
+#             self.norm_idt_A = calc_norm((self.idt_A+1)/2, self.K_B, self.crop_B)
+#             self.norm_real = calc_norm((self.real_depth+1)/2, self.K_B, self.crop_B)
+            
         if self.opt.norm_loss:
             calc_norm = SurfaceNormals()
-            self.norm_syn = calc_norm(self.syn_depth)
-            self.norm_real = calc_norm(self.real_depth)
-            self.norm_fake_B = calc_norm(self.fake_B)
-            self.norm_fake_A = calc_norm(self.fake_A)
-            self.norm_rec_A = calc_norm(self.rec_A)
-            self.norm_rec_B = calc_norm(self.rec_B)
-            self.norm_idt_A = calc_norm(self.idt_A)
-            self.norm_idt_B = calc_norm(self.idt_B)
+            self.norm_syn = calc_norm((self.syn_depth+1)/2)
+            self.norm_real = calc_norm((self.real_depth+1)/2)
+            self.norm_fake_B = calc_norm((self.fake_B+1)/2)
+            self.norm_fake_A = calc_norm((self.fake_A+1)/2)
+            self.norm_rec_A = calc_norm((self.rec_A+1)/2)
+            self.norm_rec_B = calc_norm((self.rec_B+1)/2)
+            self.norm_idt_A = calc_norm((self.idt_A+1)/2)
+            self.norm_idt_B = calc_norm((self.idt_B+1)/2)            
+            
         
         post = lambda img: np.clip((img.permute(1,2,0).numpy()+1)/2,0,1)[:,:,0]
         if self.opt.save_all:
@@ -239,7 +208,7 @@ class TranslationModel(BaseModel):
             for i in range(batch_size):
                 path = str(self.B_paths[i])
                 path = path.split('/')[-1].split('.')[0]
-                file = f'/root/callisto/depth_SR/cycle_320_pred/{path}.png'
+                file = f'/root/callisto/depth_SR/cycle_scene_320_pred/{path}.png'
                 out_np = post(self.fake_A[i].cpu().detach())*5100
                 
                 imageio.imwrite(file, out_np.astype(np.uint16))
@@ -317,7 +286,8 @@ class TranslationModel(BaseModel):
                 
                 self.loss_idt_A_norm = self.criterionIdt(self.norm_idt_A*mask_real*mask_idn, self.norm_real*mask_real*mask_idn) * lambda_B * lambda_idt_B
                 self.loss_idt_A = self.criterionIdt(self.idt_A*mask_real*mask_idn, self.real_depth*mask_real*mask_idn) * lambda_B * lambda_idt_B + self.loss_idt_A_norm*self.opt.w_norm_idt
-                
+#                 print('Identical')
+#                 print(self.criterionIdt(self.idt_A*mask_real*mask_idn, self.real_depth*mask_real*mask_idn) * lambda_B * lambda_idt_B , self.loss_idt_A_norm*self.opt.w_norm_idt, self.criterionIdt(self.norm_idt_A*mask_real*mask_idn, self.norm_syn*mask_real*mask_idn) * lambda_B * lambda_idt_B)
             
             else:
                 self.loss_idt_A_norm = self.criterionIdt(self.norm_idt_A, self.norm_real) * lambda_B * lambda_idt_B
@@ -348,10 +318,13 @@ class TranslationModel(BaseModel):
             mask_rec = torch.where(self.rec_B<-0.97, torch.tensor(0).float().to(self.rec_B.device), torch.tensor(1).float().to(self.rec_B.device))
             self.loss_cycle_B_norm = self.criterionCycle(self.norm_rec_B*mask_real*mask_rec, self.norm_real*mask_real*mask_rec) * lambda_B
             self.loss_cycle_B = self.criterionCycle(self.rec_B*mask_real*mask_rec, self.real_depth*mask_real*mask_rec) * lambda_B + self.loss_cycle_B_norm*self.opt.w_norm_cycle
+#             print('Cycle: ')
+#             print(self.criterionCycle(self.rec_B*mask_real*mask_rec, self.real_depth*mask_real*mask_rec) * lambda_B , self.loss_cycle_B_norm*self.opt.w_norm_cycle, self.criterionCycle(self.norm_rec_B*mask_real*mask_rec, self.norm_syn*mask_real*mask_rec) * lambda_B)
             
         else:
             self.loss_cycle_B_norm = self.criterionCycle(self.norm_rec_B, self.norm_real) * lambda_B
-            self.loss_cycle_B = self.criterionCycle(self.rec_B, self.real_depth) * lambda_B
+            
+            self.loss_cycle_B = self.criterionCycle(self.rec_B, self.real_depth) * lambda_B + self.loss_cycle_B_norm*self.opt.w_norm_cycle
         
         self.loss_G = self.loss_G_A + self.loss_G_B + self.loss_cycle_A + self.loss_cycle_B + self.loss_idt_A + self.loss_idt_B 
         
@@ -373,9 +346,19 @@ class TranslationModel(BaseModel):
             self.loss_iou_rec = mean_iou*0.5
             if self.opt.back_rec_iou_error:
                 self.loss_G += self.loss_iou_rec
-        
-        
-        # combined loss and calculate gradients
+        use_range_loss = True
+        if use_range_loss:
+            real_holes = torch.where(self.real_depth<self.border, torch.tensor(0).float().to(self.real_depth.device), torch.tensor(1).float().to(self.real_depth.device))
+            syn2real_holes = torch.where(self.fake_B<self.border, torch.tensor(0).float().to(self.rec_B.device), torch.tensor(1).float().to(self.rec_B.device))
+            r = (torch.sum(real_holes)/(real_holes.shape[2]*real_holes.shape[3]*real_holes.shape[0]))
+            s = (torch.sum(syn2real_holes)/(syn2real_holes.shape[2]*syn2real_holes.shape[3]*syn2real_holes.shape[0]))
+#             print(r,s)
+            self.loss_range_real = self.criterionRange(self.fake_A*real_holes, self.real_depth*real_holes)/r
+            self.loss_range_syn = self.criterionRange(self.fake_B*syn2real_holes, self.syn_depth*syn2real_holes)/s
+            self.loss_range_real_mean = torch.sqrt((torch.mean(self.fake_A*real_holes) - torch.mean(self.real_depth*real_holes))**2)/r
+            self.loss_range_syn_mean = torch.sqrt((torch.mean(self.fake_B*syn2real_holes) - torch.mean(self.syn_depth*syn2real_holes))**2)/s
+            self.loss_G +=  self.loss_range_real*self.opt.lambda_range_L2_real + self.loss_range_syn*self.opt.lambda_range_L2_syn + self.loss_range_real_mean*self.opt.lambda_range_mean_real + self.loss_range_syn_mean*self.opt.lambda_range_mean_syn
+            # combined loss and calculate gradients
         
         if back:
             self.loss_G.backward()

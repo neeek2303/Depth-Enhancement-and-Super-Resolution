@@ -141,8 +141,8 @@ class SRDataset(data.Dataset):
         A_path = self.A_paths[index_A]  # make sure index is within then range
         A_depth = np.array(Image.open(A_path))
 
-        jitter = transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1)
-        A_img = np.array(jitter(Image.open(self.A_add_paths[index_A])).convert('RGB')).astype(np.float32)
+#         jitter = transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1)
+        A_img = np.array(Image.open(self.A_add_paths[index_A])).astype(np.float32)
 
             
         img, depth, depth_lr, depth_hr_bib = self.trasform(A_depth, A_img)

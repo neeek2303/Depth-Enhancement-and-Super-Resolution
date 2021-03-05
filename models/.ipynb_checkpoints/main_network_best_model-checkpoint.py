@@ -219,7 +219,7 @@ class MainNetworkBestModel(BaseModel):
             self.criterionGAN = networks.GANLoss(opt.gan_mode).to(self.device)  # define GAN loss.
             
 
-            self.optimizer_G = torch.optim.Adam(itertools.chain( self.netTask.parameters()), lr=opt.lr)
+            self.optimizer_G = torch.optim.Adam(itertools.chain(self.netDepth_f_real.parameters(), self.netDepth_f_syn.parameters(), self.netTask.parameters()), lr=opt.lr)
             self.optimizers.append(self.optimizer_G)
             if self.opt.use_D:
                 self.optimizer_D = torch.optim.Adam(itertools.chain(self.netD_depth.parameters()), lr=opt.lr, betas=(opt.beta1, 0.999))
@@ -281,6 +281,8 @@ class MainNetworkBestModel(BaseModel):
         mask = right_mask 
         self.syn_mask = right_mask        
         
+        del right_mask
+        del mask
         
 #         print(self.syn_depth.shape)
         if self.opt.use_image_for_trans:
@@ -309,6 +311,7 @@ class MainNetworkBestModel(BaseModel):
         self.syn_depth_by_image = self.netImage2Depth(image_features_syn)
         self.real_depth_by_image = self.netImage2Depth(image_features_real)
         
+
 #         self.syn_depth_by_image = self.syn_image
 #         self.real_depth_by_image = self.real_image
                
@@ -333,9 +336,9 @@ class MainNetworkBestModel(BaseModel):
                 
             self.gt_mask_real = torch.from_numpy(np.array(out)).to(self.real_depth.device)
             self.depth_masked = torch.where(self.gt_mask_real<0.05, torch.tensor(-1).float().to(real_depth.device), real_depth)
-            depth_r_inp =  torch.cat([self.depth_masked, self.real_depth_by_image], dim=1) 
-        else:    
-            depth_r_inp =  torch.cat([real_depth, self.real_depth_by_image], dim=1) 
+#             depth_r_inp =  torch.cat([self.depth_masked, self.real_depth_by_image], dim=1) 
+#         else:    
+#             depth_r_inp =  torch.cat([real_depth, self.real_depth_by_image], dim=1) 
             
 
  
@@ -360,25 +363,27 @@ class MainNetworkBestModel(BaseModel):
             self.gt_mask_syn = torch.from_numpy(np.array(out)).to(syn_depth.device)
 
             self.syn2real_depth_masked = torch.where(self.gt_mask_syn<0.05, torch.tensor(-1).float().to(syn_depth.device), syn_depth)
-            syn_depth =  self.syn2real_depth_masked
         else:
             self.syn2real_depth_masked =  syn_depth
 
         
-        depth_s_inp =  torch.cat([syn_depth, self.syn_depth_by_image], dim=1)
-
-
+        del ones
+        del out
+        del syn_depth
+        del real_depth
         
-        syn_task_input = torch.cat([self.netDepth_f_syn(depth_s_inp), image_features_syn, depth_s_inp, self.syn_image], dim=1)
-        real_task_input = torch.cat([self.netDepth_f_syn(depth_r_inp), image_features_real, depth_r_inp, self.real_image], dim=1)
+#         syn_task_input = torch.cat([self.netDepth_f_syn(torch.cat([self.syn2real_depth_masked, self.syn_depth_by_image], dim=1)), image_features_syn, torch.cat([self.syn2real_depth_masked, self.syn_depth_by_image], dim=1), self.syn_image], dim=1)
+#         real_task_input = torch.cat([self.netDepth_f_syn(depth_r_inp), image_features_real, depth_r_inp, self.real_image], dim=1)
 
 #         syn_task_input = torch.cat([syn_depth, image_features_syn], dim=1)
 #         real_task_input = torch.cat([real_depth, image_features_real], dim=1)
 
 
-        self.pred_syn_depth = self.netTask(syn_task_input) 
-        self.pred_real_depth = self.netTask(real_task_input) 
-        
+        self.pred_syn_depth = self.netTask(torch.cat([self.netDepth_f_syn(torch.cat([self.syn2real_depth_masked, self.syn_depth_by_image], dim=1)), image_features_syn, torch.cat([self.syn2real_depth_masked, self.syn_depth_by_image], dim=1), self.syn_image], dim=1)) 
+        self.pred_real_depth = self.netTask(torch.cat([self.netDepth_f_syn(torch.cat([self.depth_masked, self.real_depth_by_image], dim=1) ), image_features_real, torch.cat([self.depth_masked, self.real_depth_by_image], dim=1) , self.real_image], dim=1)) 
+
+        del image_features_syn
+        del image_features_real
         syn_mean = torch.mean(self.syn_depth*self.syn_mask) 
         syn_pred_mean = torch.mean(self.pred_syn_depth*self.syn_mask) 
         
@@ -391,7 +396,7 @@ class MainNetworkBestModel(BaseModel):
         self.loss_real_mean_diff  = (real_mean-real_pred_mean).cpu().detach().numpy() 
         self.loss_mean_of_abs_diff_real =  np.mean(np.absolute((self.real_depth*self.real_mask-self.pred_real_depth*self.real_mask).cpu().detach().numpy()))
         
-        
+  
         
         
         post = lambda img: np.clip((img.permute(1,2,0).numpy()+1)/2,0,1)[:,:,0]
@@ -402,7 +407,7 @@ class MainNetworkBestModel(BaseModel):
             for i in range(batch_size):
                 path = str(self.B_paths[i])
                 path = path.split('/')[-1].split('.')[0]
-                file = f'/root/callisto/depth_SR/test_pred/{path}.png'
+                file = f'/root/callisto/depth_SR/test_pred_improve/{path}.png'
 #                 ou=self.pred_real_depth[i][:,16:-16,:]
 #                 print(ou.shape)
                 out_np = post(self.pred_real_depth[i][:,16:-16,:].cpu().detach())*5100
@@ -452,7 +457,7 @@ class MainNetworkBestModel(BaseModel):
 #             self.norm_real_pred = calc_norm(self.pred_real_depth)
 # #             self.norm_real_rec = calc_norm(self.real_rec)
 #             self.loss_syn_norms = self.criterion_task(self.norm_syn, self.norm_syn_pred) 
-        
+
         
         if self.opt.norm_loss:
 
@@ -479,31 +484,33 @@ class MainNetworkBestModel(BaseModel):
 
         if self.opt.use_D:
             self.loss_G_pred = self.criterionGAN(self.netD_depth(self.norm_real_pred), True)  + self.criterionGAN(self.netD_depth(self.norm_syn_pred), True) 
-
+ 
         tens = self.syn2real_depth_masked<self.border 
         tenss = self.gt_mask_syn<0.1
         ten = tens + tenss
 #         print(tens.shape, tenss.shape)
         self.mask_syn_add_holes = torch.where(ten, torch.tensor(1).float().to(self.syn2real_depth_masked.device), torch.tensor(0).float().to(self.syn2real_depth_masked.device))
-
+        del ten
+        del tenss
+        del tens
         
         self.loss_holes_syn = self.criterion_task(self.syn_depth*self.syn_mask*self.mask_syn_add_holes, self.pred_syn_depth*self.syn_mask*self.mask_syn_add_holes) 
         
         self.mask_syn_add_holes = self.pred_syn_depth*self.syn_mask*self.mask_syn_add_holes
-        
+ 
         self.loss_task_syn = self.criterion_task(self.syn_depth*self.syn_mask, self.pred_syn_depth*self.syn_mask) 
         self.loss_task_real_by_depth = self.criterion_task(self.real_depth*self.real_mask, self.pred_real_depth*self.real_mask) 
         self.loss_task_real_by_image = self.criterion_task(self.real_depth_by_image*self.real_hole_mask, self.pred_real_depth*self.real_hole_mask) 
             
         # combined loss and calculate gradients
         self.loss_G = self.loss_task_syn*self.opt.w_syn_l1 + self.loss_holes_syn*self.opt.w_syn_holes + self.loss_task_real_by_depth*self.opt.w_real_l1_d + self.loss_task_real_by_image*self.opt.w_real_l1_i
-        
+       
         if self.opt.use_masked:
             self.mask_real_add_holes = torch.where(self.gt_mask_real>0.1, torch.tensor(0).float().to(self.pred_real_depth.device), torch.tensor(1).float().to(self.pred_real_depth.device))
-            self.loss_holes_real = self.criterion_task(self.real_depth*self.mask_real_add_holes, self.pred_syn_depth*self.mask_real_add_holes) 
+            self.loss_holes_real = self.criterion_task(self.real_depth*self.mask_real_add_holes, self.pred_real_depth*self.mask_real_add_holes) 
             self.loss_G+=self.loss_holes_real*self.opt.w_real_holes
-            self.mask_real_add_holes = self.pred_syn_depth*self.mask_real_add_holes
-        
+            self.mask_real_add_holes = self.pred_real_depth*self.mask_real_add_holes
+
         if self.opt.use_D:
             self.loss_G+=self.loss_G_pred*self.opt.w_syn_adv
         
@@ -520,10 +527,11 @@ class MainNetworkBestModel(BaseModel):
             print(self.loss_edge_real, self.loss_edge_syn)
             self.loss_G+=self.loss_edge_syn*self.opt.w_edge_s + self.loss_edge_real*self.opt.w_edge_r
             
-            
+      
         self.loss_G *= self.opt.scale_G
         if back:
             self.loss_G.backward()
+            
 
     def optimize_parameters(self, iters, fr=1):
         """Calculate losses, gradients, and update network weights; called in every training iteration"""

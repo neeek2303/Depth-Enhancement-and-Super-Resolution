@@ -118,7 +118,7 @@ def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[]):
     return net
 
 
-def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, init_type='normal', init_gain=0.02, gpu_ids=[], replace_transpose=False, n_down = 2):
+def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, init_type='normal', init_gain=0.02, gpu_ids=[], replace_transpose=False, n_down = 2, use_sr=False):
     """Create a generator
 
     Parameters:
@@ -153,9 +153,9 @@ def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, in
     elif netG == 'resnet_6blocks':
         net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=6, replace_transpose=replace_transpose, n_downsampling = n_down)
     elif netG == 'unet_128':
-        net = UnetGenerator(input_nc, output_nc, 7, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
+        net = UnetGenerator(input_nc, output_nc, 7, ngf, norm_layer=norm_layer, use_dropout=use_dropout, use_sr=use_sr)
     elif netG == 'unet_256':
-        net = UnetGenerator(input_nc, output_nc, 8, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
+        net = UnetGenerator(input_nc, output_nc, 8, ngf, norm_layer=norm_layer, use_dropout=use_dropout, use_sr=use_sr)
 #     elif netG == 'EDSR':
 #         net = EDSR(n_colors = input_nc, n_out = output_nc, n_feats = ngf)
     else:
@@ -484,7 +484,7 @@ class ResnetBlock(nn.Module):
 class UnetGenerator(nn.Module):
     """Create a Unet-based generator"""
 
-    def __init__(self, input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False):
+    def __init__(self, input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False, use_sr=False):
         """Construct a Unet generator
         Parameters:
             input_nc (int)  -- the number of channels in input images
@@ -506,7 +506,7 @@ class UnetGenerator(nn.Module):
         unet_block = UnetSkipConnectionBlock(ngf * 4, ngf * 8, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
         unet_block = UnetSkipConnectionBlock(ngf * 2, ngf * 4, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
         unet_block = UnetSkipConnectionBlock(ngf, ngf * 2, input_nc=None, submodule=unet_block,  norm_layer=norm_layer)
-        self.model = UnetSkipConnectionBlock(output_nc, ngf, input_nc=input_nc, submodule=unet_block, outermost=True, norm_layer=norm_layer)  # add the outermost layer
+        self.model = UnetSkipConnectionBlock(output_nc, ngf, input_nc=input_nc, submodule=unet_block, outermost=True, norm_layer=norm_layer, sr=use_sr)  # add the outermost layer
 
     def forward(self, input):
         """Standard forward"""
@@ -520,7 +520,7 @@ class UnetSkipConnectionBlock(nn.Module):
     """
 
     def __init__(self, outer_nc, inner_nc, input_nc=None,
-                 submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False):
+                 submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False, sr=False):
         """Construct a Unet submodule with skip connections.
 
         Parameters:
@@ -549,12 +549,28 @@ class UnetSkipConnectionBlock(nn.Module):
         upnorm = norm_layer(1, outer_nc)
 
         if outermost:
-            upconv = nn.ConvTranspose2d(inner_nc * 2, outer_nc,
-                                        kernel_size=4, stride=2,
-                                        padding=1)
-            down = [downconv]
-            up = [uprelu, upconv, nn.Tanh()]
-            model = down + [submodule] + up
+            if not sr:
+                upconv = nn.ConvTranspose2d(inner_nc * 2, outer_nc,
+                                            kernel_size=4, stride=2,
+                                            padding=1)
+                down = [downconv]
+                up = [uprelu, upconv, nn.Tanh()]
+                model = down + [submodule] + up
+            else:
+                upconv1 = nn.ConvTranspose2d(inner_nc * 2, inner_nc,
+                                            kernel_size=4, stride=2,
+                                            padding=1)
+                upnorm1 = norm_layer(1, inner_nc)
+                uprelu1 = nn.ReLU(True)
+
+                unsample = nn.Upsample(scale_factor = 2, mode='bilinear')
+                resnet_blocks = ResnetBlock(inner_nc, padding_type='reflect', norm_layer=norm_layer, use_dropout=use_dropout, use_bias=use_bias)
+                uprelu2 = nn.ReLU(True)
+                conv = nn.Conv2d(inner_nc, outer_nc, kernel_size=3, padding=1)
+                
+                up = [uprelu1, upconv1, upnorm1, unsample, resnet_blocks, uprelu2, conv, nn.Tanh()]
+                down = [downconv]
+                model = down + [submodule] + up
         elif innermost:
             upconv = nn.ConvTranspose2d(inner_nc, outer_nc,
                                         kernel_size=4, stride=2,

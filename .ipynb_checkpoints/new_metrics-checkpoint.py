@@ -9,7 +9,7 @@ from glob import glob
 import multiprocessing
 import functools
 import torch
-
+import albumentations as A
 holes_threshold = 50
 
 filter_basename = lambda x: os.path.splitext(os.path.basename(x))[0]
@@ -203,6 +203,10 @@ def calc_metrics(pred, target, hole_map, target_hole_map, K, max_depth, metric_n
 
     return out
 
+def apply_transformer(transformations,  depth):
+    res = A.Compose(transformations, p=1)(image=depth)
+    return res
+
 def calc_metrics_for_path(path_args, metric_names, max_depth):
     input_path, pred_path, target_path, intrisic_path = path_args
     input_orig = imageio.imread(input_path).astype(np.float64)
@@ -211,14 +215,39 @@ def calc_metrics_for_path(path_args, metric_names, max_depth):
 #     print(pred.shape, target.shape)
     h_pred, w_pred = pred.shape
     h_target, w_target = target.shape
-    target = target[0::2, 0::2]
-    pred = pred[0::2, 0::2]
+            
+    transform_list = []
+    transform_list.append(A.Resize(height=960, width=1280, interpolation=3, p=1))
+    transformed = apply_transformer(transform_list, input_orig)
+    input_orig = transformed['image']
+    
+    
+#     transform_list = []
+#     transform_list.append(A.Resize(height=480, width=640, interpolation=2, p=1))
+#     transformed = apply_transformer(transform_list, target)
+#     pred = transformed['image']
+
+    
+#     transform_list = []
+#     transform_list.append(A.Resize(height=960, width=1280, interpolation=2, p=1))
+#     transformed = apply_transformer(transform_list, pred)
+#     pred = transformed['image']
+    
+    h_pred, w_pred = pred.shape
+    h_target, w_target = target.shape    
+    
+#     target = target[0::2, 0::2]
+#     pred = pred[0::2, 0::2]
 #     if 2*h_pred == h_target: # if our target is 2x bigger than prediction
 #         target = target[0::2, 0::2]
     hole_map = input_orig < holes_threshold
     target_hole_map = target < holes_threshold
 #     print(pred.shape, target.shape, target_hole_map.shape)
     K = np.loadtxt(intrisic_path)[:3,:3] if intrisic_path is not None else None
+    K[0][0]=K[0][0]*2
+    K[1][1]=K[1][1]*2
+    K[1][2]=K[1][2]*2
+    K[0][2]=K[0][2]*2
     
     return calc_metrics(pred, target, hole_map, target_hole_map, K, max_depth, metric_names)
 
@@ -226,10 +255,10 @@ def calculate_given_paths(input_dir_path, pred_dir_path, target_dir_path, metric
     input_names = sorted(glob(os.path.join(input_dir_path,'*.png')))
     pred_names = sorted(glob(os.path.join(pred_dir_path,'*.png')))
     target_names = sorted(glob(os.path.join(target_dir_path,'*.png')))
-    
+    print(len(input_names), len(pred_names), len(target_names))
     #check that filenames are the same
     
-    intrinsic_names = list(map(lambda x: os.path.join('/mnt/neuro/un_depth/Scannet', x[:12], 'intrinsic', 'intrinsic_depth.txt'),
+    intrinsic_names = list(map(lambda x: os.path.join('/root/datasets/un_depth/Scannet', x[:12], 'intrinsic', 'intrinsic_depth.txt'),
                                (filter_basename(input_name) for input_name in input_names)))
     _calc_metrics_for_path = functools.partial(calc_metrics_for_path, metric_names=metric_names, max_depth=max_depth)
     paths = zip(input_names, pred_names, target_names, intrinsic_names)
@@ -246,13 +275,13 @@ def calculate_given_paths(input_dir_path, pred_dir_path, target_dir_path, metric
 if __name__ == '__main__':
     print('start')
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--input_path', type=str, default = '/mnt/neuro/un_depth/Scannet_ssim/testA/full_size/depth', help='Path to the input images')
-    parser.add_argument('--pred_path', type=str, default = '/root/callisto/SRFBN_CVPR19/test_pred', help='Path to the generated images')
-    parser.add_argument('--target_path', type=str, default = '/mnt/neuro/un_depth/Scannet_ssim/testB/full_size/depth', help='Path to the target images')
+    parser.add_argument('--input_path', type=str, default = '/root/datasets/un_depth/Scannet_ssim/testA/full_size/depth', help='Path to the input images')
+    parser.add_argument('--pred_path', type=str, default = '/root/callisto/depth_SR/test_pred_naive_hr', help='Path to the generated images')
+    parser.add_argument('--target_path', type=str, default = '/root/datasets/un_depth/Scannet_ssim/testB/full_size/depth', help='Path to the target images')
     parser.add_argument('--max_depth', type=int, default=5100, help='Maximum depth value')
     parser.add_argument('--n_cpus', type=int, default=10, help='Number of cpu cores to use')
     args = parser.parse_args()
 
     list_of_metrics = ["rmse", "mae", "rmse_h", "rmse_d", "psnr", "ssim", "mae_h", "mae_d", "mse_v"]
-    out = calculate_given_paths(args.input_path, args.pred_path, args.target_path, list_of_metrics, args.max_depth, 10)
+    out = calculate_given_paths(args.input_path, args.pred_path, args.target_path, list_of_metrics, args.max_depth, 30)
     print(out)

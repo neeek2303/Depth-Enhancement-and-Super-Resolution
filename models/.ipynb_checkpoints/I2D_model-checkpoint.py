@@ -265,8 +265,8 @@ class I2DModel(BaseModel):
         # combined loss and calculate gradients
         self.loss_G = self.loss_task_syn*self.opt.w_syn_l1  + self.loss_task_real*self.opt.w_real_l1 
         
-        if self.opt.norm_loss:
-            self.loss_G+=self.loss_syn_norms*self.opt.w_syn_norm
+#         if self.opt.norm_loss:
+#             self.loss_G+=self.loss_syn_norms*self.opt.w_syn_norm
         
 #         if self.opt.use_D:
 #             self.loss_G_pred = self.criterionGAN(self.netD_depth(self.features_syn), True)  
@@ -297,7 +297,7 @@ class I2DModel(BaseModel):
                 self.optimizer_D.step()  
             
             
-    def calculate(self):
+    def calculate(self, stage='train'):
         """Calculate losses, gradients, and update network weights; called in every training iteration"""
         # forward
         self.forward()      # compute fake images and reconstruction images.

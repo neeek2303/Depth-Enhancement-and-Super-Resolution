@@ -45,25 +45,25 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--custom_pathes', action='store_true', help='custom_pathes to data or not')
         
 #         parser.add_argument('--path_A', type=str, default='/mnt/neuro/depth/NYUv2/InteriorNet/trainB/depth', help='path_A')
-        parser.add_argument('--path_A', type=str, default='/mnt/neuro/un_depth/Scannet_ssim/trainB/depth', help='path_A')
+        parser.add_argument('--path_A', type=str, default='/root/datasets/un_depth/SceneNet_6m/trainB/depth', help='path_A')
 #         parser.add_argument('--path_B', type=str, default='/mnt/neuro/depth/NYUv2/NYUv2/depth', help='path_B')
-        parser.add_argument('--path_B', type=str, default='/mnt/neuro/un_depth/Scannet_ssim/trainA/depth', help='path_B')
+        parser.add_argument('--path_B', type=str, default='/root/datasets/un_depth/Scannet_ssim/trainA/full_size/depth', help='path_B')
         
 #         parser.add_argument('--path_A_test', type=str, default='/mnt/neuro/depth/NYUv2/InteriorNet/testB/depth', help='path_A_test')
-        parser.add_argument('--path_A_test', type=str, default='/mnt/neuro/un_depth/Scannet_ssim/testB/full_size/depth', help='path_A_test')
+        parser.add_argument('--path_A_test', type=str, default='/root/datasets/un_depth/Scenenet/testB/depth', help='path_A_test')
 #         parser.add_argument('--path_B_test', type=str, default='/mnt/neuro/depth/NYUv2/NYUv2/depth_test', help='path_B_test')
-        parser.add_argument('--path_B_test', type=str, default='/mnt/neuro/un_depth/Scannet_ssim/testA/full_size/depth', help='path_B_test')
+        parser.add_argument('--path_B_test', type=str, default='/root/datasets/un_depth/Scannet_ssim/testA/full_size/depth', help='path_B_test')
         
         parser.add_argument('--image_and_depth', action='store_true', help='image and depth')
 #         parser.add_argument('--A_add_paths', type=str, default='/mnt/neuro/depth/NYUv2/InteriorNet/trainB/img', help='path_A_test')
-        parser.add_argument('--A_add_paths', type=str, default='/mnt/neuro/un_depth/Scannet_ssim/trainB/img', help='path_A_test')
+        parser.add_argument('--A_add_paths', type=str, default='/root/datasets/un_depth/SceneNet_6m/trainB/img', help='path_A_test')
 #         parser.add_argument('--B_add_paths', type=str, default='/mnt/neuro/depth/NYUv2/NYUv2/img', help='path_B_test')
-        parser.add_argument('--B_add_paths', type=str, default='/mnt/neuro/un_depth/Scannet_ssim/trainA/img', help='path_B_test')     
+        parser.add_argument('--B_add_paths', type=str, default='/root/datasets/un_depth/Scannet_ssim/trainA/full_size/img', help='path_B_test')     
         
 #         parser.add_argument('--A_add_paths_test', type=str, default='/mnt/neuro/depth/NYUv2/InteriorNet/testB/img', help='path_A_test')
-        parser.add_argument('--A_add_paths_test', type=str, default='/mnt/neuro/un_depth/Scannet_ssim/testB/full_size/img', help='path_A_test')
+        parser.add_argument('--A_add_paths_test', type=str, default='/root/datasets/un_depth/Scenenet/testB/img', help='path_A_test')
 #         parser.add_argument('--B_add_paths_test', type=str, default='/mnt/neuro/depth/NYUv2/NYUv2/img_test', help='path_B_test')
-        parser.add_argument('--B_add_paths_test', type=str, default='/mnt/neuro/un_depth/Scannet_ssim/testA/full_size/img', help='path_B_test')
+        parser.add_argument('--B_add_paths_test', type=str, default='/root/datasets/un_depth/Scannet_ssim/testA/full_size/img', help='path_B_test')
         
         
         parser.add_argument('--num_test', type=int, default=5000)

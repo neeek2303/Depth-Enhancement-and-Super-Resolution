@@ -3,7 +3,7 @@ import torch
 from collections import OrderedDict
 from abc import ABC, abstractmethod
 from . import networks
-
+import sys
 
 class BaseModel(ABC):
     """This class is an abstract base class (ABC) for models.
@@ -203,16 +203,43 @@ class BaseModel(ABC):
                     # patch InstanceNorm checkpoints prior to 0.4
                     for key in list(state_dict.keys()):  # need to copy keys here because we mutate in loop
                         self.__patch_instance_norm_state_dict(state_dict, net, key.split('.'))
-#                     net.load_state_dict(state_dict)
-                    
+    #                     net.load_state_dict(state_dict)
+
+
                     net_dict = net.state_dict()
+
                     for key in list(net_dict.keys()):  # need to copy keys here because we mutate in loop
                         self.__patch_instance_norm_state_dict(net_dict, net, key.split('.'))
-                    state_dict = {k: v for k, v in state_dict.items() if k in net_dict}
-                    net_dict.update(state_dict) 
+
+                    k = list(net_dict.keys())[0]
+#                     print('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+#                     print(state_dict[k])
+#                     print('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
+#                     print(net_dict[k])
+#                     print(len(list(net_dict.keys())))
+#                     print(list(net_dict.keys()))
+                    state_dict = {k: v for k, v in state_dict.items() if (k in net_dict) and (state_dict[k].shape==net_dict[k].shape)}
+                    net_dict.update(state_dict)
+#                     print(list(net_dict.keys()))
+#                     print('cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc')
+#                     print(net_dict[k])
+#                     print(len(list(net_dict.keys())))
+#                     print(len(list(state_dict.keys())))
                     net.load_state_dict(net_dict)
+    #                 try:
+    #                     net.load_state_dict(net_dict)
+    #                 except:
+    #                     e = sys.exc_info()[0]
+    #                     print('eeeeeeeeeeeeeeeeeeeeee')
+    #                     print(e)
+                    new_dict = net.state_dict()
+#                     print('dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd')
+#                     print(new_dict[k])
+
                     
-                except:
+                    
+                except Exception as e:
+#                     print(e.message)
                     pass
 
     def print_networks(self, verbose):
