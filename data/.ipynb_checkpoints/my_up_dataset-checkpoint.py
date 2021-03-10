@@ -39,7 +39,7 @@ class MyUnalignedDataset(BaseDataset):
             res = A.Compose(transformations, p=1, additional_targets=target)(image=img, depth=depth)
         return res
     
-    def trasform(self, depth, img, full=True, train=True):
+    def trasform(self, depth, img, full=True, train=True, sin=False):
         
 
         img = img.astype(np.float32)
@@ -78,8 +78,8 @@ class MyUnalignedDataset(BaseDataset):
 #         height =  432
 #         width = 576
         
-        height_c = int(384*(depth.shape[0]//480))
-        width_c = int(512*(depth.shape[1]//640))
+        height_c = int(480*(depth.shape[0]//480))
+        width_c = int(640*(depth.shape[1]//640))
         
 #         height_c = 320
 #         width_c = 320
@@ -96,23 +96,28 @@ class MyUnalignedDataset(BaseDataset):
         if train:
             if full:
                 transform_list.append(A.Resize(height=height, width=width, interpolation=3, p=1))
-                transform_list.append(A.Rotate(limit = [-15,15], p=0.8))
-                transform_list.append(A.RandomCrop(height=height_c, width=width_c, p=1))
-                transform_list.append(A.HorizontalFlip(p=0.5))
+#                 transform_list.append(A.Rotate(limit = [-15,15], p=0.8))
+#                 transform_list.append(A.RandomCrop(height=height_c, width=width_c, p=1))
+#                 transform_list.append(A.HorizontalFlip(p=0.5))
+                transform_list.append(A.PadIfNeeded(512*(depth.shape[0]//480), 640*(depth.shape[1]//640), p=1))
                 
                 
                 
                 transform_list_d = []
-                transform_list_d.append(A.Resize(height=height_c//2, width=width_c//2, interpolation=3, p=1))
+                transform_list_d.append(A.Resize(height=512*(depth.shape[0]//480)//2, width=640*(depth.shape[1]//640)//2, interpolation=3, p=1))
                 
         
         else:
-            transform_list.append(A.Resize(height=480, width=640, interpolation=3, p=1))
-            transform_list.append(A.PadIfNeeded(512, 640, p=1))
+#             transform_list.append(A.RandomCrop(height=height_c, width=width_c, p=1))
+            if sin:
+                width = 1280
+                height = 960
+            transform_list.append(A.Resize(height=height, width=width, interpolation=3, p=1))
+            transform_list.append(A.PadIfNeeded(512*(height//480), 640*(width//640), p=1))
             
             transform_list_d = []
-            transform_list_d.append(A.Resize(height=height_c, width=width_c, interpolation=3, p=1))
-            transformed = self.apply_transformer(transform_list_d, img, depth_origin)
+            transform_list_d.append(A.Resize(height=512*(height//480)//2, width=640*(width//640)//2, interpolation=3, p=1))
+            
             
             
         transformed_or = self.apply_transformer(transform_list, img, depth)
@@ -133,8 +138,7 @@ class MyUnalignedDataset(BaseDataset):
         img = torch.from_numpy(img).permute(2, 0, 1)
         img_origin = torch.from_numpy(img_origin).permute(2, 0, 1)
         depth_origin = torch.from_numpy(depth_origin).unsqueeze(0)
-        
-#         print(depth_origin.shape, depth.shape, img.shape)
+#         print(depth_origin.shape, img_origin.shape, depth.shape, img.shape)
         return depth_origin, img_origin, depth, img
         
     
@@ -238,7 +242,7 @@ class MyUnalignedDataset(BaseDataset):
             A_img = np.array(Image.open(self.A_add_paths[index_A])).astype(np.float32)
             B_img = np.array(Image.open(self.B_add_paths[index_B])).astype(np.float32)
             
-            A_depth_hr, _, A_depth, A_img = self.trasform(A_depth, A_img, train =self.train, full=True)
+            A_depth_hr, _, A_depth, A_img = self.trasform(A_depth, A_img, train =self.train, full=True, sin =True)
             B_depth, B_img, _, _ = self.trasform(B_depth, B_img, train =self.train, full=True)
 #             print(A_path)
             K_A = self.get_imp_matrx(A_path)
@@ -250,12 +254,12 @@ class MyUnalignedDataset(BaseDataset):
             K_A_sr[0][2]=K_A_sr[0][2]*2
             
             if self.train:
-                crop_A = np.array([0, 384, 0, 512])
-                crop_B = np.array([0, 384, 0, 512])
+                crop_A = np.array([0, 480, 0, 640])
+                crop_B = np.array([0, 480, 0, 640])
             else:
-                crop_A = np.array([0, 512, 0, 640])
-                crop_B = np.array([0, 512, 0, 640])                
-            
+                crop_A = np.array([0, 480, 0, 640])
+                crop_B = np.array([0, 480, 0, 640])                
+            print(A_depth_hr.shape, A_img.shape, B_img.shape, A_depth.shape, B_depth.shape)
         return {'A_d_hr':A_depth_hr,'A_i': A_img, 'B_i': B_img, 'A_d': A_depth, 'B_d': B_depth, 'A_paths': A_path, 'B_paths': B_path, 'K_A': K_A, 'K_A_sr': K_A_sr, 'K_B': K_B, 'crop_A': crop_A, 'crop_B': crop_B}
 
 #             return {'A_i': A_img, 'B_i': B_img, 'A_d': A_depth, 'B_d': B_depth, 'A_paths': A_path, 'B_paths': B_path}

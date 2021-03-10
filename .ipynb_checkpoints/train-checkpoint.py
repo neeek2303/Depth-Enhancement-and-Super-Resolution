@@ -28,15 +28,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 wandb.init(project="translation_compare")
 # from models.main_network_model import MainNetworkModel
-from models.main_network_best_model import MainNetworkBestModel
+# from models.main_network_best_model import MainNetworkBestModel
 # from models.main_network_best_sr1_model import MainNetworkBestSR1Model
 # from models.main_network_best_sr2_model import MainNetworkBestSR2Model
-from models.translation_model import TranslationModel
+# from models.translation_model import TranslationModel
 from models.I2D_model import I2DModel
 # from models.depth_by_image import Depth_by_Image
-from data.my_dataset import MyUnalignedDataset
+# from data.my_main_dataset import MyUnalignedDataset
+# from data.my_up_dataset import MyUnalignedDataset
 # from data.my_naive_sr_dataset import MyUnalignedDataset
-# from data.my_I2D_dataset import MyUnalignedDataset
+from data.my_I2D_dataset import MyUnalignedDataset
 # from data.my_translation_dataset import MyUnalignedDataset
 import torch
 from collections import OrderedDict 
@@ -56,12 +57,15 @@ def plot_main_new_norm(img_dict, global_step, depth=True,  is_epoch=False, stage
         syn_norm = img_dict['norm_syn'].cpu().detach()
         norm_syn2real = img_dict['norm_syn2real'].cpu().detach()
         syn_norm_pred = img_dict['norm_syn_pred'].cpu().detach()
+#         syn_norm_pred_k = img_dict['norm_syn_pred_k'].cpu().detach()
+#         syn_norm_k = img_dict['norm_syn_k'].cpu().detach()
         syn_depth_by_image = img_dict['syn_depth_by_image'].cpu().detach()
         
         real_image = img_dict['real_image'].cpu().detach()
         real_depth = img_dict['real_depth'].cpu().detach()
         real_depth_by_image = img_dict['real_depth_by_image'].cpu().detach()
         pred_real_depth = img_dict['pred_real_depth'].cpu().detach()
+#         pred_real_depth_old = img_dict['pred_real_depth_old'].cpu().detach()
         mask_real_add_holes = img_dict['mask_real_add_holes'].cpu().detach()
         real_mask = img_dict['real_mask'].cpu().detach()
 
@@ -117,9 +121,13 @@ def plot_main_new_norm(img_dict, global_step, depth=True,  is_epoch=False, stage
         axes[0,4].imshow(pr_d(pred_syn_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
         
         axes[1,0].imshow(pr_d(syn_mask), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
-        axes[1,1].imshow(pr(syn_norm*100))
-        axes[1,2].imshow(pr(norm_syn2real*100))
-        axes[1,3].imshow(pr(syn_norm_pred*100))
+        
+#         axes[1,0].imshow(pr(syn_norm_pred_k))
+        
+        axes[1,1].imshow(pr(syn_norm))
+#         axes[1,1].imshow(pr(syn_norm_k))
+        axes[1,2].imshow(pr(norm_syn2real))
+        axes[1,3].imshow(pr(syn_norm_pred))
         axes[1,4].imshow(pr_d(mask_syn_add_holes), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
             
         axes[2,0].imshow(pr(real_image))
@@ -129,9 +137,11 @@ def plot_main_new_norm(img_dict, global_step, depth=True,  is_epoch=False, stage
         axes[2,4].imshow(pr_d(pred_real_depth), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
         
         axes[3,0].imshow(pr_d(real_mask), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
-        axes[3,1].imshow(pr(norm_real*100))
-        axes[3,2].imshow(pr(norm_real_pred*100))
-        axes[3,3].imshow(pr(norm_real_pred*100))
+        axes[3,1].imshow(pr(norm_real))
+        axes[3,2].imshow(pr(norm_real))
+#         axes[3,2].imshow(pr_d(pred_real_depth_old), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
+        
+        axes[3,3].imshow(pr(norm_real_pred))
         axes[3,4].imshow(pr_d(mask_real_add_holes), cmap=plt.get_cmap('RdYlBu'), vmin=0, vmax=1)
         
         wandb.log({"chart": fig}, step=global_step)
@@ -486,6 +496,7 @@ if __name__ == '__main__':
 #     model = MainNetworkModel(opt)
 #     model = MainNetworkBestModel(opt)
 #     model = MainNetworkBestSR1Model(opt)
+#     model = MainNetworkBestSR2Model(opt)
     model = I2DModel(opt)
 
     model.setup(opt)               # regular setup: load and print networks; create schedulers
@@ -537,14 +548,13 @@ if __name__ == '__main__':
 #                 if opt.display_id > 0:
 #                     visualizer.plot_current_losses(epoch, float(epoch_iter) / dataset_size, losses)
 
-            if (total_iters-opt.start_iter)  % 500*opt.batch_size == 0:   # cache our latest model every <save_latest_freq> iterations
+            if (total_iters-opt.start_iter)  % 1000*opt.batch_size == 0:   # cache our latest model every <save_latest_freq> iterations
                 print('saving the latest model (epoch %d, total_iters %d)' % (epoch, total_iters))
                 save_suffix = 'iter_%d' % total_iters if opt.save_by_iter else 'latest'
                 model.save_networks(save_suffix)
                 print('metrics')
 
-      
-                # update learning rates at the end of every epoch.
+
 
         
         
@@ -554,8 +564,8 @@ if __name__ == '__main__':
         with torch.no_grad():
 #             mean_losses = OrderedDict([('D_A', 0.0), ('G_A', 0.0), ('cycle_A', 0.0), ('idt_A', 0.0), ('D_B', 0.0), ('G_B', 0.0), ('cycle_B', 0.0), ('idt_B', 0.0)])
 #             mean_losses = OrderedDict([('G_A', 0.0), ('cycle_A', 0.0), ('idt_A', 0.0),  ('G_B', 0.0), ('cycle_B', 0.0), ('idt_B', 0.0)])
-#             mean_losses = OrderedDict([('task_syn', 0.0), ('task_real', 0.0)])
-            mean_losses = OrderedDict([('task_syn', 0.0), ('holes_syn', 0.0), ('task_real_by_depth', 0.0), ('holes_real', 0.0), ('syn_norms', 0.0) ])
+            mean_losses = OrderedDict([('task_syn', 0.0), ('task_real', 0.0)])
+#             mean_losses = OrderedDict([('task_syn', 0.0), ('holes_syn', 0.0), ('task_real_by_depth', 0.0), ('holes_real', 0.0), ('syn_norms', 0.0) ])
             l = len(test_dataset)
             for i, data in enumerate(test_dataset):  # inner loop within one epoch
                 test_iter += opt.batch_size
@@ -582,10 +592,10 @@ if __name__ == '__main__':
         
             
         
-        if epoch % opt.save_epoch_freq == 0:              # cache our model every <save_epoch_freq> epochs
-            print('saving the model at the end of epoch %d, iters %d' % (epoch, total_iters))
-            model.save_networks('latest')
-            model.save_networks(epoch)
+#         if epoch % opt.save_epoch_freq == 0:              # cache our model every <save_epoch_freq> epochs
+#             print('saving the model at the end of epoch %d, iters %d' % (epoch, total_iters))
+#             model.save_networks('latest')
+#             model.save_networks(epoch)
 
-        print('End of epoch %d / %d \t Time Taken: %d sec' % (epoch, opt.n_epochs + opt.n_epochs_decay, time.time() - epoch_start_time))
-        model.update_learning_rate() 
+#         print('End of epoch %d / %d \t Time Taken: %d sec' % (epoch, opt.n_epochs + opt.n_epochs_decay, time.time() - epoch_start_time))
+#         model.update_learning_rate() 

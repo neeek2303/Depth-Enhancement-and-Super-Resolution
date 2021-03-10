@@ -557,20 +557,50 @@ class UnetSkipConnectionBlock(nn.Module):
                 up = [uprelu, upconv, nn.Tanh()]
                 model = down + [submodule] + up
             else:
-                upconv1 = nn.ConvTranspose2d(inner_nc * 2, inner_nc,
+                
+                uprelu1 = nn.ReLU(True)
+                upconv1 = nn.ConvTranspose2d(inner_nc * 2, inner_nc//2,
                                             kernel_size=4, stride=2,
                                             padding=1)
-                upnorm1 = norm_layer(1, inner_nc)
-                uprelu1 = nn.ReLU(True)
-
-                unsample = nn.Upsample(scale_factor = 2, mode='bilinear')
-                resnet_blocks = ResnetBlock(inner_nc, padding_type='reflect', norm_layer=norm_layer, use_dropout=use_dropout, use_bias=use_bias)
-                uprelu2 = nn.ReLU(True)
-                conv = nn.Conv2d(inner_nc, outer_nc, kernel_size=3, padding=1)
+                upnorm1 = norm_layer(inner_nc)
                 
-                up = [uprelu1, upconv1, upnorm1, unsample, resnet_blocks, uprelu2, conv, nn.Tanh()]
+                
+#                 relu1 = nn.ReLU(True)
+#                 conv1 = nn.Conv2d(inner_nc//2, inner_nc//2, kernel_size=3, padding=1)
+#                 norm1 = norm_layer(inner_nc)
+                
+                resnet_blocks_1 = ResnetBlock(inner_nc//2, padding_type='reflect', norm_layer=norm_layer, use_dropout=use_dropout, use_bias=use_bias)
+                
+                uprelu2= nn.ReLU(True)
+                upconv2 = nn.ConvTranspose2d(inner_nc//2, inner_nc//4,
+                                            kernel_size=4, stride=2,
+                                            padding=1)
+                upnorm2 = norm_layer(inner_nc)
+                
+                resnet_blocks_2 = ResnetBlock(inner_nc//4, padding_type='reflect', norm_layer=norm_layer, use_dropout=use_dropout, use_bias=use_bias)
+
+#                 relu2= nn.ReLU(True)
+#                 conv2 = nn.Conv2d(inner_nc//2, inner_nc//2, kernel_size=3, padding=1)
+#                 norm2 = norm_layer(inner_nc)
+
+                relu3= nn.ReLU(True)
+                conv3 = nn.Conv2d(inner_nc//4, 1, kernel_size=3, padding=1)
+                up = [uprelu1, upconv1, upnorm1, resnet_blocks_1, uprelu2, upconv2, upnorm2, resnet_blocks_2, relu3, conv3, nn.Tanh()]
+                
+                
+#                 unsample = nn.Upsample(scale_factor = 2, mode='bilinear')
+#                 resnet_blocks = ResnetBlock(inner_nc, padding_type='reflect', norm_layer=norm_layer, use_dropout=use_dropout, use_bias=use_bias)
+#                 uprelu2 = nn.ReLU(True)
+#                 conv = nn.Conv2d(inner_nc, outer_nc, kernel_size=3, padding=1)
+#                 up = [uprelu1, upconv1, upnorm1, unsample, resnet_blocks, uprelu2, conv, nn.Tanh()]
+                
+                
+                
+                
+                
                 down = [downconv]
                 model = down + [submodule] + up
+                
         elif innermost:
             upconv = nn.ConvTranspose2d(inner_nc, outer_nc,
                                         kernel_size=4, stride=2,

@@ -223,9 +223,9 @@ def calc_metrics_for_path(path_args, metric_names, max_depth):
     
     
 #     transform_list = []
-#     transform_list.append(A.Resize(height=480, width=640, interpolation=2, p=1))
+#     transform_list.append(A.Resize(height=480, width=640, interpolation=3, p=1))
 #     transformed = apply_transformer(transform_list, target)
-#     pred = transformed['image']
+#     target = transformed['image']
 
     
 #     transform_list = []
@@ -251,10 +251,8 @@ def calc_metrics_for_path(path_args, metric_names, max_depth):
     
     return calc_metrics(pred, target, hole_map, target_hole_map, K, max_depth, metric_names)
 
-def calculate_given_paths(input_dir_path, pred_dir_path, target_dir_path, metric_names, max_depth, n_cpus):
-    input_names = sorted(glob(os.path.join(input_dir_path,'*.png')))
-    pred_names = sorted(glob(os.path.join(pred_dir_path,'*.png')))
-    target_names = sorted(glob(os.path.join(target_dir_path,'*.png')))
+def calculate_given_paths(input_names, pred_names, target_names, metric_names, max_depth, n_cpus):
+
     print(len(input_names), len(pred_names), len(target_names))
     #check that filenames are the same
     
@@ -275,13 +273,23 @@ def calculate_given_paths(input_dir_path, pred_dir_path, target_dir_path, metric
 if __name__ == '__main__':
     print('start')
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--input_path', type=str, default = '/root/datasets/un_depth/Scannet_ssim/testA/full_size/depth', help='Path to the input images')
-    parser.add_argument('--pred_path', type=str, default = '/root/callisto/depth_SR/test_pred_naive_hr', help='Path to the generated images')
-    parser.add_argument('--target_path', type=str, default = '/root/datasets/un_depth/Scannet_ssim/testB/full_size/depth', help='Path to the target images')
+    parser.add_argument('--input_path', type=str, default = '/root/datasets/un_depth/Scannet_ssim/testA/full_size/depth_show', help='Path to the input images')
+    parser.add_argument('--pred_path', type=str, default = '/root/callisto/depth_SR/show_naive_sr_1', help='Path to the generated images')
+    parser.add_argument('--target_path', type=str, default = '/root/datasets/un_depth/Scannet_ssim/testB/full_size/depth_show', help='Path to the target images')
     parser.add_argument('--max_depth', type=int, default=5100, help='Maximum depth value')
     parser.add_argument('--n_cpus', type=int, default=10, help='Number of cpu cores to use')
     args = parser.parse_args()
 
+    
+    input_names = sorted(glob(os.path.join(args.input_path,'*.png')))
+    pred_names = sorted(glob(os.path.join(args.pred_path,'*.png')))
+    target_names = sorted(glob(os.path.join(args.target_path,'*.png')))
     list_of_metrics = ["rmse", "mae", "rmse_h", "rmse_d", "psnr", "ssim", "mae_h", "mae_d", "mse_v"]
-    out = calculate_given_paths(args.input_path, args.pred_path, args.target_path, list_of_metrics, args.max_depth, 30)
-    print(out)
+    print(input_names,pred_names, target_names)
+#     out = calculate_given_paths(input_names, pred_names, target_names, list_of_metrics, args.max_depth, 30)
+#     print(out)
+    
+    for i in range(len(input_names)):
+        print(input_names[i], pred_names[i], target_names[i])
+        out = calculate_given_paths([input_names[i]], [pred_names[i]], [target_names[i]], list_of_metrics, args.max_depth, 30)
+        print(out)

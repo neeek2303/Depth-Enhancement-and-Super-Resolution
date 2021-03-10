@@ -14,7 +14,20 @@ import torch.nn.functional as F
 import kornia
 
 
-
+def tv_loss(img):
+    """
+    Compute total variation loss.
+    Inputs:
+    - img: PyTorch Variable of shape (1, 3, H, W) holding an input image.
+    - tv_weight: Scalar giving the weight w_t to use for the TV loss.
+    Returns:
+    - loss: PyTorch Variable holding a scalar giving the total variation loss
+      for img weighted by tv_weight.
+    """
+    w_variance = torch.sum(torch.pow(img[:,:,:,:-1] - img[:,:,:,1:], 2))
+    h_variance = torch.sum(torch.pow(img[:,:,:-1,:] - img[:,:,1:,:], 2))
+    loss = (h_variance + w_variance)
+    return loss
 
 def scale_pyramid(img, num_scales):
     scaled_imgs = [img]
@@ -118,7 +131,7 @@ class MainNetworkBestSR1Model(BaseModel):
         """
         BaseModel.__init__(self, opt)
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
-        self.loss_names = ['task_syn','holes_syn', 'task_real_by_depth', 'task_real_by_image','syn_mean_diff', 'real_mean_diff']
+        self.loss_names = ['task_syn','holes_syn', 'task_real_by_depth', 'task_real_by_image','syn_mean_diff', 'real_mean_diff', 'tv_syn_norm']
         if opt.norm_loss:
             self.loss_names+=['syn_norms']
         
@@ -202,6 +215,7 @@ class MainNetworkBestSR1Model(BaseModel):
         self.netTask = networks.define_G(task_input_features, 1, opt.Task_basef, opt.Task_type, opt.norm,
                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose, n_down = opt.Task_ndown)
         
+        
 
         self.loss_L1_syn=0
         self.loss_L1_real=0
@@ -283,6 +297,7 @@ class MainNetworkBestSR1Model(BaseModel):
         mask = right_mask 
         self.syn_mask = right_mask        
         
+        del right_mask
         
 #         print(self.syn_depth.shape)
         if self.opt.use_image_for_trans:
@@ -418,7 +433,7 @@ class MainNetworkBestSR1Model(BaseModel):
             for i in range(batch_size):
                 path = str(self.B_paths[i])
                 path = path.split('/')[-1].split('.')[0]
-                file = f'/root/callisto/depth_SR/test_pred_naive_hr_2/{path}.png'
+                file = f'/root/callisto/depth_SR/test_pred_naive_hr_3/{path}.png'
 #                 ou=self.pred_real_depth[i][:,16:-16,:]
 #                 print(ou.shape)
                 out_np = post(self.pred_real_depth_hr[i][:,32:-32,:].cpu().detach())*5100
@@ -470,9 +485,8 @@ class MainNetworkBestSR1Model(BaseModel):
             self.norm_syn_pred = calc_norm((self.pred_syn_depth+1)/2)*100
             self.norm_real = calc_norm((self.real_depth+1)/2)*100
             self.norm_real_pred = calc_norm((self.pred_real_depth+1)/2)*100
-#             self.norm_real_rec = calc_norm(self.real_rec)
-            self.loss_syn_norms = self.criterion_task(self.norm_syn, self.norm_syn_pred) 
-        
+            self.loss_syn_norms = self.criterion_task_2(self.norm_syn*self.syn_mask, self.norm_syn_pred*self.syn_mask) 
+            self.loss_tv_syn_norm = tv_loss(self.norm_syn_pred)*(10**-5)
         
 #         if self.opt.norm_loss:
 
@@ -484,9 +498,8 @@ class MainNetworkBestSR1Model(BaseModel):
 #             calc_norm = SurfaceNormals_new()
 #             self.norm_real = calc_norm(self.real_depth, self.K_B, self.crop_B)
 #             self.norm_real_pred = calc_norm(self.pred_real_depth, self.K_B, self.crop_B)
-# #             self.norm_real_r2s = calc_norm((self.r2s+1)/2, self.K_B, self.crop_B)
-#             self.loss_syn_norms = self.criterion_task(self.norm_syn*self.syn_mask, self.norm_syn_pred*self.syn_mask)
-# #             self.loss_real_norms = self.criterion_task(self.norm_real_r2s*self.real_mask, self.norm_real_pred*self.real_mask) 
+#             self.loss_syn_norms = self.criterion_task_2(self.norm_syn*self.syn_mask, self.norm_syn_pred*self.syn_mask)
+#             self.loss_real_norms = self.criterion_task_2(self.norm_real_r2s*self.real_mask, self.norm_real_pred*self.real_mask) 
                 
         
         
@@ -511,7 +524,7 @@ class MainNetworkBestSR1Model(BaseModel):
         self.loss_task_real_by_image = self.criterion_task(self.real_depth_by_image*self.real_hole_mask, self.pred_real_depth*self.real_hole_mask) 
             
         # combined loss and calculate gradients
-        self.loss_G = self.loss_task_syn*self.opt.w_syn_l1 + self.loss_holes_syn*self.opt.w_syn_holes + self.loss_task_real_by_depth*self.opt.w_real_l1_d + self.loss_task_real_by_image*self.opt.w_real_l1_i
+        self.loss_G = self.loss_task_syn*self.opt.w_syn_l1 + self.loss_holes_syn*self.opt.w_syn_holes + self.loss_task_real_by_depth*self.opt.w_real_l1_d + self.loss_task_real_by_image*self.opt.w_real_l1_i + self.loss_tv_syn_norm * 20
         
         if self.opt.use_masked:
             self.mask_real_add_holes = torch.where(self.gt_mask_real>0.1, torch.tensor(0).float().to(self.pred_real_depth.device), torch.tensor(1).float().to(self.pred_real_depth.device))

@@ -197,7 +197,7 @@ class TranslationModel(BaseModel):
             self.norm_rec_A = calc_norm((self.rec_A+1)/2)
             self.norm_rec_B = calc_norm((self.rec_B+1)/2)
             self.norm_idt_A = calc_norm((self.idt_A+1)/2)
-            self.norm_idt_B = calc_norm((self.idt_B+1)/2)            
+            self.norm_idt_B = calc_norm((self.idt_B+1)/2)           
             
         
         post = lambda img: np.clip((img.permute(1,2,0).numpy()+1)/2,0,1)[:,:,0]

@@ -67,7 +67,23 @@ def get_smooth_weight(depth, Image, num_scales):
     loss_y = [torch.mean(torch.abs(smoothness_y[i]))/2**i for i in range(num_scales)]
 
     return sum(loss_x+loss_y)
-    
+
+
+
+def tv_loss(img):
+    """
+    Compute total variation loss.
+    Inputs:
+    - img: PyTorch Variable of shape (1, 3, H, W) holding an input image.
+    - tv_weight: Scalar giving the weight w_t to use for the TV loss.
+    Returns:
+    - loss: PyTorch Variable holding a scalar giving the total variation loss
+      for img weighted by tv_weight.
+    """
+    w_variance = torch.sum(torch.pow(img[:,:,:,:-1] - img[:,:,:,1:], 2))
+    h_variance = torch.sum(torch.pow(img[:,:,:-1,:] - img[:,:,1:,:], 2))
+    loss = (h_variance + w_variance)
+    return loss
   
     
 class MainNetworkBestSR2Model(BaseModel):
@@ -117,7 +133,7 @@ class MainNetworkBestSR2Model(BaseModel):
         """
         BaseModel.__init__(self, opt)
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
-        self.loss_names = ['task_syn','holes_syn', 'task_real_by_depth', 'task_real_by_image','syn_mean_diff', 'real_mean_diff']
+        self.loss_names = ['task_syn','holes_syn', 'task_real_by_depth', 'task_real_by_image','syn_mean_diff', 'real_mean_diff', 'like_old_syn', 'like_old_real', 'like_old_syn_norm', 'like_old_real_norm', 'tv_syn_norm', 'syn_norms_k']
         if opt.norm_loss:
             self.loss_names+=['syn_norms']
         
@@ -132,11 +148,11 @@ class MainNetworkBestSR2Model(BaseModel):
             
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         visual_names_A = ['syn_image', 'syn_depth', 'syn2real_depth',  'syn_mask', 'pred_syn_depth', 'mask_syn_add_holes', 'syn_depth_by_image']
-        visual_names_B = ['real_image', 'real_depth','real_depth_by_image', 'pred_real_depth', 'real_mask', 'mask_real_add_holes']
+        visual_names_B = ['real_image', 'real_depth','real_depth_by_image', 'pred_real_depth', 'real_mask', 'mask_real_add_holes', 'pred_real_depth_old']
         
         if opt.norm_loss:
-            visual_names_A += ['norm_syn','norm_syn_pred', 'norm_syn2real']
-            visual_names_B += [ 'norm_real','norm_real_pred']
+            visual_names_A += ['norm_syn','norm_syn_pred', 'norm_syn2real','norm_syn_k']
+            visual_names_B += [ 'norm_real','norm_real_pred', 'norm_syn_pred_k']
         
         if self.opt.use_masked:
             visual_names_B+=['depth_masked']
@@ -153,7 +169,7 @@ class MainNetworkBestSR2Model(BaseModel):
         self.visual_names = visual_names_A + visual_names_B  # combine visualizations for A and B
         
         
-        self.model_names = ['G_A_d',  'I2D_features', 'Image2Depth',  'Depth_f_syn', 'Depth_f_real', 'Task']
+        self.model_names = ['G_A_d',  'I2D_features', 'Image2Depth',  'Depth_f_syn', 'Depth_f_real', 'Task', 'Task_old']
         
         # Define networks 
         
@@ -201,23 +217,23 @@ class MainNetworkBestSR2Model(BaseModel):
         self.netTask = networks.define_G(task_input_features, 1, opt.Task_basef, opt.Task_type, opt.norm,
                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose, n_down = opt.Task_ndown, use_sr=True)
         
-
-        self.set_requires_grad([self.netTask,], False)
+        self.netTask_old = networks.define_G(task_input_features, 1, opt.Task_basef, opt.Task_type, opt.norm,
+                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose, n_down = opt.Task_ndown, use_sr=False)
+        
+#         self.set_requires_grad([self.netTask,], False)
     
-    
-
-#         print(list(self.netTask.children())[-15:])
-        l = len(list(self.netTask.modules()))
-        k = 1
-#         print(l, len(list(self.netTask.parameters())))
-        for module in self.netTask.modules():
-            if k>=(l-15): 
-                for params in module.parameters():
-                    print(params.requires_grad)
-                    params.requires_grad = True
-                    print(params.requires_grad)
-                    print()
-            k+=1        
+#         print(list(self.netTask.modules())[-30:])
+#         l = len(list(self.netTask.modules()))
+#         k = 1
+# #         print(l, len(list(self.netTask.parameters())))
+#         for module in self.netTask.modules():
+#             if k>=(l-30): 
+#                 for params in module.parameters():
+#                     print(params.requires_grad)
+#                     params.requires_grad = True
+#                     print(params.requires_grad)
+#                     print()
+#             k+=1        
                     
         print('==================================================')        
         for i in self.netTask.parameters():
@@ -400,23 +416,28 @@ class MainNetworkBestSR2Model(BaseModel):
 
 
         self.pred_syn_depth = self.netTask(torch.cat([self.netDepth_f_syn(torch.cat([syn_depth, self.syn_depth_by_image], dim=1)), image_features_syn, torch.cat([syn_depth, self.syn_depth_by_image], dim=1), self.syn_image], dim=1)) 
+        
+        self.pred_syn_depth_old = self.netTask_old(torch.cat([self.netDepth_f_syn(torch.cat([syn_depth, self.syn_depth_by_image], dim=1)), image_features_syn, torch.cat([syn_depth, self.syn_depth_by_image], dim=1), self.syn_image], dim=1)) 
         self.pred_real_depth_hr = self.netTask(torch.cat([self.netDepth_f_syn(depth_r_inp), image_features_real, depth_r_inp, self.real_image], dim=1))
+        self.pred_real_depth_old = self.netTask_old(torch.cat([self.netDepth_f_syn(depth_r_inp), image_features_real, depth_r_inp, self.real_image], dim=1))
+        self.pred_real_depth = F.interpolate(self.pred_real_depth_hr, size = (self.pred_real_depth_hr.shape[2]//2, self.pred_real_depth_hr.shape[3]//2) , mode='bilinear') 
         
-        self.pred_real_depth = F.interpolate(self.pred_real_depth_hr, size = (384,512) , mode='bilinear') 
+#         if stage =='train':
+            
         del syn_depth
-        del image_features_syn
-        del image_features_real
-        
+#         del image_features_syn
+#         del image_features_real
+
         syn_mean = torch.mean(self.syn_depth*self.syn_mask) 
 #         print(self.pred_syn_depth.shape, self.syn_mask_hr.shape)
         syn_pred_mean = torch.mean(self.pred_syn_depth*self.syn_mask_hr) 
-        
+
         self.loss_syn_mean_diff = (syn_mean-syn_pred_mean).cpu().detach().numpy()
-        self.loss_mean_of_abs_diff_syn =  np.mean(np.absolute((self.syn_depth*self.syn_mask-F.interpolate(self.pred_syn_depth*self.syn_mask_hr, size = (384,512) , mode='bilinear') ).cpu().detach().numpy()))
+        self.loss_mean_of_abs_diff_syn =  np.mean(np.absolute((self.syn_depth*self.syn_mask-F.interpolate(self.pred_syn_depth*self.syn_mask_hr, size = (self.pred_syn_depth.shape[2]//2, self.pred_syn_depth.shape[3]//2) , mode='bilinear') ).cpu().detach().numpy()))
 
         real_mean = torch.mean(self.real_depth*self.real_mask) 
         real_pred_mean = torch.mean(self.pred_real_depth*self.real_mask) 
-        
+
         self.loss_real_mean_diff  = (real_mean-real_pred_mean).cpu().detach().numpy() 
         self.loss_mean_of_abs_diff_real =  np.mean(np.absolute((self.real_depth*self.real_mask-self.pred_real_depth*self.real_mask).cpu().detach().numpy()))
         
@@ -431,7 +452,8 @@ class MainNetworkBestSR2Model(BaseModel):
             for i in range(batch_size):
                 path = str(self.B_paths[i])
                 path = path.split('/')[-1].split('.')[0]
-                file = f'/root/callisto/depth_SR/test_pred_up_sr/{path}.png'
+                file = f'/root/callisto/depth_SR/show_up_sr/{path}.png'
+                print(self.pred_real_depth_hr[i][:,32:-32,:].shape)
 #                 ou=self.pred_real_depth[i][:,16:-16,:]
 #                 print(ou.shape)
                 out_np = post(self.pred_real_depth_hr[i][:,32:-32,:].cpu().detach())*5100
@@ -477,39 +499,38 @@ class MainNetworkBestSR2Model(BaseModel):
         if self.opt.norm_loss:
             calc_norm = SurfaceNormals()
             self.norm_syn = calc_norm((self.syn_depth_hr+1)/2)*100
+            
             self.norm_syn2real = calc_norm((self.syn2real_depth_masked+1)/2)*100
             self.norm_syn_pred = calc_norm((self.pred_syn_depth+1)/2)*100
+            self.norm_syn_pred_old = calc_norm((self.pred_syn_depth_old+1)/2)*100
             self.norm_real = calc_norm((self.real_depth+1)/2)*100
             self.norm_real_pred = calc_norm((self.pred_real_depth+1)/2)*100
+            self.norm_real_pred_hr = calc_norm((self.pred_real_depth_hr+1)/2)*100
+            self.norm_real_pred_old = calc_norm((self.pred_real_depth_old+1)/2)*100
 #             self.norm_real_rec = calc_norm(self.real_rec)
 #             print(self.norm_syn.shape, self.norm_syn_pred.shape)
-            self.loss_syn_norms = self.criterion_task(self.norm_syn*self.syn_mask_hr, self.norm_syn_pred*self.syn_mask_hr) 
+#             self.loss_tv_syn_norm = tv_loss(self.norm_syn_pred)*(10**-6)*10
+#             print(self.loss_tv_syn_norm, tv_loss(self.norm_syn)*(10**-6)*10)
+            self.loss_syn_norms = self.criterion_task_2(self.norm_syn*self.syn_mask_hr, self.norm_syn_pred*self.syn_mask_hr) 
 
-
+ 
 
         
-#         if self.opt.norm_loss:
+        if self.opt.norm_loss:
 
-#             calc_norm = SurfaceNormals_new()
-# #             self.norm_syn = calc_norm((self.syn_depth+1)/2, self.K_A, self.crop_A)
-            
-# #             print(self.crop_A)
-# #             print(self.crop_A*2)
-        
-#             self.norm_syn = calc_norm(F.interpolate(self.syn_depth_hr, size = (384,512) , mode='nearest'), self.K_A_sr, self.crop_A*2)
-#             self.norm_syn2real = calc_norm(self.syn2real_depth_masked, self.K_A, self.crop_A)
-#             syn_pred = F.interpolate(self.pred_syn_depth, size = (384,512) , mode='nearest') 
-#             self.norm_syn_pred = calc_norm(self.syn_pred, self.K_A, self.crop_A)
-# #             self.norm_syn_pred = F.interpolate(self.norm_syn_pred, size = (384*2,512*2) , mode='nearest') 
+            calc_norm = SurfaceNormals_new()
 
-#             calc_norm = SurfaceNormals_new()
-#             self.norm_real = calc_norm(self.real_depth, self.K_B, self.crop_B)
-#             self.norm_real_pred = calc_norm(self.pred_real_depth, self.K_B, self.crop_B)
-# #             self.norm_real_r2s = calc_norm((self.r2s+1)/2, self.K_B, self.crop_B)
-#             self.loss_syn_norms = self.criterion_task(self.norm_syn*self.syn_mask_hr, self.norm_syn_pred*self.syn_mask_hr)
-# #             self.loss_real_norms = self.criterion_task(self.norm_real_r2s*self.real_mask, self.norm_real_pred*self.real_mask) 
+            self.norm_syn_k = calc_norm(self.syn_depth_hr[:,:,32:-32,:], self.K_A_sr, self.crop_A*2)
+#             self.norm_syn2real_k = calc_norm(self.syn2real_depth_masked, self.K_A, self.crop_A)
+            self.norm_syn_pred_k = calc_norm(self.pred_syn_depth[:,:,32:-32,:], self.K_A_sr, self.crop_A*2)
+#             self.norm_syn_pred = F.interpolate(self.norm_syn_pred, size = (384*2,512*2) , mode='nearest') 
+#             self.loss_tv_syn_norm+= tv_loss(self.norm_syn_pred_k)*(10**-6)*5
+            self.loss_tv_syn_norm = tv_loss(self.norm_syn_pred_k)*(10**-6)*10
+            print(self.loss_tv_syn_norm, tv_loss(self.norm_syn_k)*(10**-6)*10)
+            self.loss_syn_norms_k = self.criterion_task_2(self.norm_syn_k*self.syn_mask_hr[:,:,32:-32,:], self.norm_syn_pred_k*self.syn_mask_hr[:,:,32:-32,:])
+#             self.loss_real_norms = self.criterion_task(self.norm_real_r2s*self.real_mask, self.norm_real_pred*self.real_mask) 
                 
-        
+
         
 
 
@@ -524,7 +545,41 @@ class MainNetworkBestSR2Model(BaseModel):
         del b
         del c
         
-        self.mask_syn_add_holes = F.interpolate(self.mask_syn_add_holes, size = (384*2,512*2) , mode='nearest') 
+        
+        
+        a = self.criterion_task(self.pred_syn_depth_old, F.interpolate(self.pred_syn_depth, size = (self.pred_syn_depth.shape[2]//2, self.pred_syn_depth.shape[3]//2) , mode='bicubic'))
+        c = self.criterion_task(self.pred_syn_depth_old, F.interpolate(self.pred_syn_depth, size = (self.pred_syn_depth.shape[2]//2, self.pred_syn_depth.shape[3]//2) , mode='bilinear'))
+        d = self.criterion_task(self.pred_syn_depth_old, F.interpolate(self.pred_syn_depth, size = (self.pred_syn_depth.shape[2]//2, self.pred_syn_depth.shape[3]//2) , mode='area')) 
+        f = self.criterion_task(self.pred_syn_depth_old, F.interpolate(self.pred_syn_depth, size = (self.pred_syn_depth.shape[2]//2, self.pred_syn_depth.shape[3]//2) , mode='nearest')) 
+
+        self.loss_like_old_syn = a +  c + d + f
+        
+        aa = self.criterion_task_2(self.norm_syn_pred_old, F.interpolate(self.norm_syn_pred, size = (self.norm_syn_pred.shape[2]//2, self.norm_syn_pred.shape[3]//2) , mode='bicubic'))
+
+        cc  =self.criterion_task_2(self.norm_syn_pred_old, F.interpolate(self.norm_syn_pred, size = (self.norm_syn_pred.shape[2]//2, self.norm_syn_pred.shape[3]//2) , mode='bilinear')) 
+        dd= self.criterion_task_2(self.norm_syn_pred_old, F.interpolate(self.norm_syn_pred, size = (self.norm_syn_pred.shape[2]//2, self.norm_syn_pred.shape[3]//2) , mode='area'))
+        ff = self.criterion_task_2(self.norm_syn_pred_old, F.interpolate(self.norm_syn_pred, size = (self.norm_syn_pred.shape[2]//2, self.norm_syn_pred.shape[3]//2) , mode='nearest'))
+        self.loss_like_old_syn_norm = aa + cc + dd +  ff
+        
+        aaa = self.criterion_task(self.pred_real_depth_old, F.interpolate(self.pred_real_depth_hr, size = (self.pred_real_depth_hr.shape[2]//2, self.pred_real_depth_hr.shape[3]//2) , mode='bicubic'))                
+
+        ccc = self.criterion_task(self.pred_real_depth_old, F.interpolate(self.pred_real_depth_hr, size = (self.pred_real_depth_hr.shape[2]//2, self.pred_real_depth_hr.shape[3]//2) , mode='bilinear'))
+        ddd = self.criterion_task(self.pred_real_depth_old, F.interpolate(self.pred_real_depth_hr, size = (self.pred_real_depth_hr.shape[2]//2, self.pred_real_depth_hr.shape[3]//2) , mode='area'))
+
+        fff = self.criterion_task(self.pred_real_depth_old, F.interpolate(self.pred_real_depth_hr, size = (self.pred_real_depth_hr.shape[2]//2, self.pred_real_depth_hr.shape[3]//2) , mode='nearest'))
+        
+        self.loss_like_old_real = aaa +  ccc + ddd +  fff
+        
+         
+        aaaa = self.criterion_task_2(self.norm_real_pred_old, F.interpolate(self.norm_real_pred_hr, size = (self.norm_real_pred_hr.shape[2]//2, self.norm_real_pred_hr.shape[3]//2) , mode='bicubic'))
+
+        cccc = self.criterion_task_2(self.norm_real_pred_old, F.interpolate(self.norm_real_pred_hr, size = (self.norm_real_pred_hr.shape[2]//2, self.norm_real_pred_hr.shape[3]//2) , mode='bilinear'))
+        dddd = self.criterion_task_2(self.norm_real_pred_old, F.interpolate(self.norm_real_pred_hr, size = (self.norm_real_pred_hr.shape[2]//2, self.norm_real_pred_hr.shape[3]//2) , mode='area'))
+
+        ffff = self.criterion_task_2(self.norm_real_pred_old, F.interpolate(self.norm_real_pred_hr, size = (self.norm_real_pred_hr.shape[2]//2, self.norm_real_pred_hr.shape[3]//2) , mode='nearest'))       
+        self.loss_like_old_real_norm = aaaa +  cccc + dddd +  ffff
+        
+        self.mask_syn_add_holes = F.interpolate(self.mask_syn_add_holes, size = (self.mask_syn_add_holes.shape[2]*2, self.mask_syn_add_holes.shape[3]*2) , mode='nearest') 
         
         self.loss_holes_syn = self.criterion_task(self.syn_depth_hr*self.syn_mask_hr*self.mask_syn_add_holes, self.pred_syn_depth*self.syn_mask_hr*self.mask_syn_add_holes) 
         
@@ -535,11 +590,11 @@ class MainNetworkBestSR2Model(BaseModel):
         self.loss_task_real_by_image = self.criterion_task(self.real_depth_by_image*self.real_hole_mask, self.pred_real_depth*self.real_hole_mask) 
             
         # combined loss and calculate gradients
-        self.loss_G = self.loss_task_syn*self.opt.w_syn_l1 + self.loss_holes_syn*self.opt.w_syn_holes + self.loss_task_real_by_depth*self.opt.w_real_l1_d + self.loss_task_real_by_image*self.opt.w_real_l1_i
+        self.loss_G = self.loss_task_syn*self.opt.w_syn_l1 + self.loss_holes_syn*self.opt.w_syn_holes + self.loss_task_real_by_depth*self.opt.w_real_l1_d + self.loss_task_real_by_image*self.opt.w_real_l1_i + self.loss_like_old_syn*70 + self.loss_like_old_real*100 + self.loss_like_old_syn_norm*30 + self.loss_like_old_real_norm*10  + self.loss_tv_syn_norm*3 + self.loss_syn_norms_k*50
         
         if self.opt.use_masked:
             self.mask_real_add_holes = torch.where(self.gt_mask_real>0.1, torch.tensor(0).float().to(self.pred_real_depth.device), torch.tensor(1).float().to(self.pred_real_depth.device))
-            self.loss_holes_real = self.criterion_task(self.real_depth*self.pred_real_depth, self.pred_real_depth*self.mask_real_add_holes) 
+            self.loss_holes_real = self.criterion_task(self.real_depth*self.mask_real_add_holes, self.pred_real_depth*self.mask_real_add_holes) 
             self.loss_G+=self.loss_holes_real*self.opt.w_real_holes
             self.mask_real_add_holes = self.pred_real_depth*self.mask_real_add_holes
         
@@ -574,7 +629,7 @@ class MainNetworkBestSR2Model(BaseModel):
         self.forward()      # compute fake images and reconstruction images.
         # G_A and G_B
 #         self.set_requires_grad([self.netG_A , self.netG_A_d, self.netD_depth], False)  # Ds require no gradients when optimizing Gs
-        self.set_requires_grad([self.netG_A_d, self.netI2D_features, self.netImage2Depth ], False)  # Ds require no gradients when optimizing Gs
+        self.set_requires_grad([self.netG_A_d, self.netI2D_features, self.netImage2Depth, self.netTask_old ], False)  # Ds require no gradients when optimizing Gs
     
         if self.opt.use_D:
             self.set_requires_grad([self.netG_A_d, self.self.netG_B_d, self.netD_depth ], False)

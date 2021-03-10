@@ -78,8 +78,8 @@ class MyUnalignedDataset(BaseDataset):
 #         height =  432
 #         width = 576
         
-        height_c = 384
-        width_c = 512
+        height_c = 480
+        width_c = 640
         
 #         height_c = 320
 #         width_c = 320
@@ -89,14 +89,15 @@ class MyUnalignedDataset(BaseDataset):
         if train:
             if full:
                 transform_list.append(A.Resize(height=height, width=width, interpolation=3, p=1))
+                transform_list.append(A.PadIfNeeded(512, 640, p=1))
 #             else:
 #                 transform_list.append(A.PadIfNeeded(322, 322, p=1))
 
-            if self.opt.isTrain:
+#             if self.opt.isTrain:
 
-                transform_list.append(A.Rotate(limit = [-15,15], p=0.8))
-                transform_list.append(A.RandomCrop(height=height_c, width=width_c, p=1))
-                transform_list.append(A.HorizontalFlip(p=0.5))
+#                 transform_list.append(A.Rotate(limit = [-15,15], p=0.8))
+#                 transform_list.append(A.RandomCrop(height=height_c, width=width_c, p=1))
+#                 transform_list.append(A.HorizontalFlip(p=0.5))
         else:
             transform_list.append(A.Resize(height=height, width=width, interpolation=3, p=1))
             transform_list.append(A.PadIfNeeded(512, 640, p=1))
@@ -223,8 +224,8 @@ class MyUnalignedDataset(BaseDataset):
             K_B = self.get_imp_matrx(B_path)
             
             if self.train:
-                crop_A = np.array([0, 384, 0, 512])
-                crop_B = np.array([0, 384, 0, 512])
+                crop_A = np.array([0, 512, 0, 640])
+                crop_B = np.array([0, 512, 0, 640])
             else:
                 crop_A = np.array([0, 512, 0, 640])
                 crop_B = np.array([0, 512, 0, 640])                
