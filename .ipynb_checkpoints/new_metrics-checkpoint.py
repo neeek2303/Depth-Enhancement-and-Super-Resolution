@@ -212,43 +212,22 @@ def calc_metrics_for_path(path_args, metric_names, max_depth):
     input_orig = imageio.imread(input_path).astype(np.float64)
     pred = imageio.imread(pred_path).astype(np.float64).clip(0, max_depth) 
     target = imageio.imread(target_path).astype(np.float64).clip(0, max_depth)
-#     print(pred.shape, target.shape)
     h_pred, w_pred = pred.shape
     h_target, w_target = target.shape
             
-    transform_list = []
-    transform_list.append(A.Resize(height=960, width=1280, interpolation=3, p=1))
-    transformed = apply_transformer(transform_list, input_orig)
-    input_orig = transformed['image']
-    
-    
-#     transform_list = []
-#     transform_list.append(A.Resize(height=480, width=640, interpolation=3, p=1))
-#     transformed = apply_transformer(transform_list, target)
-#     target = transformed['image']
-
-    
-#     transform_list = []
-#     transform_list.append(A.Resize(height=960, width=1280, interpolation=2, p=1))
-#     transformed = apply_transformer(transform_list, pred)
-#     pred = transformed['image']
-    
     h_pred, w_pred = pred.shape
     h_target, w_target = target.shape    
-    
-#     target = target[0::2, 0::2]
-#     pred = pred[0::2, 0::2]
-#     if 2*h_pred == h_target: # if our target is 2x bigger than prediction
-#         target = target[0::2, 0::2]
+
+    if 2*h_pred == h_target: # if our target is 2x bigger than prediction
+        target = target[0::2, 0::2]
     hole_map = input_orig < holes_threshold
     target_hole_map = target < holes_threshold
-#     print(pred.shape, target.shape, target_hole_map.shape)
     K = np.loadtxt(intrisic_path)[:3,:3] if intrisic_path is not None else None
-    K[0][0]=K[0][0]*2
-    K[1][1]=K[1][1]*2
-    K[1][2]=K[1][2]*2
-    K[0][2]=K[0][2]*2
-    
+#     K[0][0]=K[0][0]*2
+#     K[1][1]=K[1][1]*2
+#     K[1][2]=K[1][2]*2
+#     K[0][2]=K[0][2]*2
+    scale_K = np.array([[2., 1., 2.],[1., 2., 2.],[1., 1., 1.]])
     return calc_metrics(pred, target, hole_map, target_hole_map, K, max_depth, metric_names)
 
 def calculate_given_paths(input_names, pred_names, target_names, metric_names, max_depth, n_cpus):
@@ -261,7 +240,7 @@ def calculate_given_paths(input_names, pred_names, target_names, metric_names, m
     _calc_metrics_for_path = functools.partial(calc_metrics_for_path, metric_names=metric_names, max_depth=max_depth)
     paths = zip(input_names, pred_names, target_names, intrinsic_names)
     with multiprocessing.Pool(n_cpus) as p:
-        res = list(tqdm.tqdm(p.imap(func=_calc_metrics_for_path, iterable=paths), total=len(input_names)))
+        res = list(p.imap(func=_calc_metrics_for_path, iterable=paths))
     out = {}
     for metric_name in metric_names:
         out[metric_name] = np.asarray([x[metric_name] for x in res])
@@ -273,9 +252,9 @@ def calculate_given_paths(input_names, pred_names, target_names, metric_names, m
 if __name__ == '__main__':
     print('start')
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--input_path', type=str, default = '/root/datasets/un_depth/Scannet_ssim/testA/full_size/depth_show', help='Path to the input images')
-    parser.add_argument('--pred_path', type=str, default = '/root/callisto/depth_SR/show_naive_sr_1', help='Path to the generated images')
-    parser.add_argument('--target_path', type=str, default = '/root/datasets/un_depth/Scannet_ssim/testB/full_size/depth_show', help='Path to the target images')
+    parser.add_argument('--input_path', type=str, default = '/root/datasets/un_depth/Scannet_ssim/testA/full_size/depth', help='Path to the input images')
+    parser.add_argument('--pred_path', type=str, default = '/root/code_for_article/depth_SR/test_pred', help='Path to the generated images')
+    parser.add_argument('--target_path', type=str, default = '/root/datasets/un_depth/Scannet_ssim/testB/full_size/depth', help='Path to the target images')
     parser.add_argument('--max_depth', type=int, default=5100, help='Maximum depth value')
     parser.add_argument('--n_cpus', type=int, default=10, help='Number of cpu cores to use')
     args = parser.parse_args()
@@ -285,11 +264,10 @@ if __name__ == '__main__':
     pred_names = sorted(glob(os.path.join(args.pred_path,'*.png')))
     target_names = sorted(glob(os.path.join(args.target_path,'*.png')))
     list_of_metrics = ["rmse", "mae", "rmse_h", "rmse_d", "psnr", "ssim", "mae_h", "mae_d", "mse_v"]
-    print(input_names,pred_names, target_names)
-#     out = calculate_given_paths(input_names, pred_names, target_names, list_of_metrics, args.max_depth, 30)
-#     print(out)
+    out = calculate_given_paths(input_names, pred_names, target_names, list_of_metrics, args.max_depth, 10)
+    print(out)
     
-    for i in range(len(input_names)):
-        print(input_names[i], pred_names[i], target_names[i])
-        out = calculate_given_paths([input_names[i]], [pred_names[i]], [target_names[i]], list_of_metrics, args.max_depth, 30)
-        print(out)
+#     for i in range(len(input_names)):
+#         print(input_names[i], pred_names[i], target_names[i])
+#         out = calculate_given_paths([input_names[i]], [pred_names[i]], [target_names[i]], list_of_metrics, args.max_depth, 30)
+#         print(out)

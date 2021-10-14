@@ -77,7 +77,7 @@ class CustomDatasetDataLoader():
         print("dataset [%s] was created" % type(self.dataset).__name__)
         self.dataloader = torch.utils.data.DataLoader(
             self.dataset,
-            batch_size=opt.batch_size if stage=='train' else max(opt.batch_size//4, 1),
+            batch_size=opt.batch_size if stage=='train' else opt.batch_size_val,
             shuffle=not opt.serial_batches,
             num_workers=int(opt.num_threads))
 

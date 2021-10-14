@@ -1,0 +1,21 @@
+# eg: docker build --build-arg UBUNTU_VERSION=focal
+ARG UBUNTU_VERSION
+FROM ubuntu:${UBUNTU_VERSION}
+# Persist ARG for the rest of the build
+ARG UBUNTU_VERSION
+ARG NVIDIA_DRIVER_VERSION=430
+LABEL name="open3d-dev/open3d-gpu-ci-${UBUNTU_VERSION}" \
+            vendor="open3d.org" \
+            architecture="x86_64" \
+            os="linux" \
+            maintainer="sameer.sheorey@intel.com"
+
+ENV DEBIAN_FRONTEND=noninteractive TZ=America/Los_Angeles SUDO=command
+# Install Python 3, cmake>=3.12 and nvidia drivers (only if not installed)
+# Install dependencies with apt-get and pip
+
+COPY ./util/docker/open3d-gpu/scripts/env-setup.sh /root/Open3D/util/docker/open3d-gpu/scripts/env-setup.sh
+COPY ./util/install_deps_ubuntu.sh ./util/ci_utils.sh /root/Open3D/util/
+COPY ./util/ci_utils.sh /root/Open3D/util/
+
+

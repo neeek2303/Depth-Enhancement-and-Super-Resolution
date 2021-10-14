@@ -197,6 +197,15 @@ class BaseModel(ABC):
                     # if you are using PyTorch newer than 0.4 (e.g., built from
                     # GitHub source), you can remove str() on self.device
                     state_dict = torch.load(load_path, map_location=str(self.device))
+                    
+                    
+                    
+                    
+                    if load_filename == 'latest_net_G_A_d.pth' and ("netG_B" in list(state_dict.keys())):
+                        state_dict = state_dict["netG_B"]
+
+
+
                     if hasattr(state_dict, '_metadata'):
                         del state_dict._metadata
 
@@ -212,29 +221,14 @@ class BaseModel(ABC):
                         self.__patch_instance_norm_state_dict(net_dict, net, key.split('.'))
 
                     k = list(net_dict.keys())[0]
-#                     print('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
-#                     print(state_dict[k])
-#                     print('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
-#                     print(net_dict[k])
-#                     print(len(list(net_dict.keys())))
-#                     print(list(net_dict.keys()))
+
                     state_dict = {k: v for k, v in state_dict.items() if (k in net_dict) and (state_dict[k].shape==net_dict[k].shape)}
                     net_dict.update(state_dict)
-#                     print(list(net_dict.keys()))
-#                     print('cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc')
-#                     print(net_dict[k])
-#                     print(len(list(net_dict.keys())))
-#                     print(len(list(state_dict.keys())))
+
                     net.load_state_dict(net_dict)
-    #                 try:
-    #                     net.load_state_dict(net_dict)
-    #                 except:
-    #                     e = sys.exc_info()[0]
-    #                     print('eeeeeeeeeeeeeeeeeeeeee')
-    #                     print(e)
+
                     new_dict = net.state_dict()
-#                     print('dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd')
-#                     print(new_dict[k])
+
 
                     
                     

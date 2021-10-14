@@ -14,16 +14,6 @@ import albumentations as A
 import numpy as np
 
 class MyUnalignedDataset(BaseDataset):
-    """
-    This dataset class can load unaligned/unpaired datasets.
-
-    It requires two directories to host training images from domain A '/path/to/data/trainA'
-    and from domain B '/path/to/data/trainB' respectively.
-    You can train the model with the dataset flag '--dataroot /path/to/data'.
-    Similarly, you need to prepare two directories:
-    '/path/to/data/testA' and '/path/to/data/testB' during test time.
-    """
-
 
     def apply_transformer(self, transformations, img, depth, semantic=None):
         if semantic is not None:
@@ -43,8 +33,7 @@ class MyUnalignedDataset(BaseDataset):
         
 
         img = img.astype(np.float32)
-        img = (img - 127.5) / 127.5   #HYPERPRAM
-#         print(depth.dtype, np.min(depth), np.mean(depth), np.max(depth))
+        img = (img - 127.5) / 127.5  
         meters = 5100 
         if depth.dtype == np.int32:
             m_in_mm = meters
@@ -56,60 +45,48 @@ class MyUnalignedDataset(BaseDataset):
             depth = np.where(depth>meters, meters, depth)/meters
             depth = depth*2 - 1
             
-#         depth = (depth -np.max(depth)/2) / (np.max(depth)/2)    
-#         print(depth.dtype, np.min(depth), np.mean(depth), np.max(depth))
-#         print('=========================================================================')
+
         depth = depth.astype(np.float32)
-        
-        
+
         transform_list  = []
         
-#         if self.opt.notscannet:
-#         height =  self.opt.load_size
-#         width = self.opt.load_size
-        
-#         height_c = self.opt.crop_size
-#         width_c = self.opt.crop_size
+
 
 
         height =  960
         width = 1280
         
-#         height =  432
-#         width = 576
         
-        height_c = 384*2
-        width_c = 384*2
+        height_c = self.opt.crop_size_h*2
+        width_c = self.opt.crop_size_w*2
         
-#         height_c = 320
-#         width_c = 320
+
         
         transform_list = []
-#         transform_list.append(A.Resize(height=height, width=width, interpolation=4, p=1))
+
         if train:
             if full:
                 transform_list.append(A.Resize(height=height, width=width, interpolation=3, p=1))
-                transform_list.append(A.Rotate(limit = [-15,15], p=0.8))
-                transform_list.append(A.RandomCrop(height=height_c, width=width_c, p=1))
-                transform_list.append(A.HorizontalFlip(p=0.5))
-                
-                
-                
+                transform_list.append(A.PadIfNeeded(1024, 1280, p=1))
+
                 transform_list_d = []
                 transform_list_d.append(A.Resize(height=height_c//2, width=width_c//2, interpolation=3, p=1))
                 
-        
+                transformed_or = self.apply_transformer(transform_list, img, depth)
+                h, w = np.random.randint(0,1024-height_c+1), np.random.randint(0,1280-width_c+1)
+                depth_origin = transformed_or['depth'][h:h+height_c, w:w+width_c]
+                img_origin = transformed_or['image'][h:h+height_c, w:w+width_c]
         else:
             transform_list.append(A.Resize(height=height, width=width, interpolation=3, p=1))
             transform_list.append(A.PadIfNeeded(1024, 1280, p=1))
             
             transform_list_d = []
             transform_list_d.append(A.Resize(height=height_c, width=width_c, interpolation=3, p=1))
-            
-            
-        transformed_or = self.apply_transformer(transform_list, img, depth)
-        depth_origin = transformed_or['depth']
-        img_origin = transformed_or['image']
+            h, w = 0, 0
+
+            transformed_or = self.apply_transformer(transform_list, img, depth)
+            depth_origin = transformed_or['depth']
+            img_origin = transformed_or['image']
         
         
         
@@ -127,22 +104,15 @@ class MyUnalignedDataset(BaseDataset):
         depth_origin = torch.from_numpy(depth_origin).unsqueeze(0)
         
 #         print(depth_origin.shape, depth.shape, img.shape)
-        return depth_origin, img_origin, depth, img
+        return depth_origin, img_origin, depth, img, h, w
         
     
     
     def __init__(self, opt, stage='train'):
-        """Initialize this dataset class.
-
-        Parameters:
-            opt (Option class) -- stores all the experiment flags; needs to be a subclass of BaseOptions
-        """
+        
         BaseDataset.__init__(self, opt)
         
         self.opt = opt    
-    
-        
-        
         self.dir_A = os.path.join(opt.path_A)  # create a path '/path/to/data/trainA'
         self.dir_B = os.path.join(opt.path_B)  # create a path '/path/to/data/trainB'
 
@@ -192,25 +162,11 @@ class MyUnalignedDataset(BaseDataset):
 
     def get_imp_matrx(self, f_name):
         f_name = f_name.split('/')[-1].split('.')[0]
-        K = np.loadtxt(os.path.join('/root/datasets/un_depth/Scannet/', f_name[:12], 'intrinsic', 'intrinsic_depth.txt'))[:3,:3]
+        K = np.loadtxt(os.path.join(self.opt.path_to_intr, f_name[:12], 'intrinsic', 'intrinsic_depth.txt'))[:3,:3]
         return K
     
     def __getitem__(self, index):
-        """Return a data point and its metadata information.
 
-        Parameters:
-            index (int)      -- a random integer for data indexing
-
-        Returns a dictionary that contains A, B, A_paths and B_paths
-            A (tensor)       -- an image in the input domain
-            B (tensor)       -- its corresponding image in the target domain
-            A_paths (str)    -- image paths
-            B_paths (str)    -- image paths
-        """
-#         index_A = index % self.A_size
-#         A_path = self.A_paths[index_A]  # make sure index is within then range
-#         index_B = random.randint(0, self.B_size - 1)
-#         B_path = self.B_paths[index_B]
 
         index_B = index % self.B_size
         B_path = self.B_paths[index_B]
@@ -223,40 +179,39 @@ class MyUnalignedDataset(BaseDataset):
             A_depth = np.array(Image.open(A_path))
             B_depth = np.array(Image.open(B_path)) if self.opt.use_scannet else np.array(np.load(B_path)).astype(np.float32) 
 
-#             jitter = transforms.ColorJitter(brightness=0.05, contrast=0.05, saturation=0.05, hue=0.05)
-#             A_img = np.array(jitter(Image.open(self.A_add_paths[index_A])).convert('RGB')).astype(np.float32)
-#             B_img = np.array(jitter(Image.open(self.B_add_paths[index_B])).convert('RGB')).astype(np.float32)
 
             A_img = np.array(Image.open(self.A_add_paths[index_A])).astype(np.float32)
             B_img = np.array(Image.open(self.B_add_paths[index_B])).astype(np.float32)
             
-            A_depth, A_img, _, _  = self.trasform(A_depth, A_img, train =self.train, full=True)
-            B_depth, B_img, _, _ = self.trasform(B_depth, B_img, train =self.train, full=True)
+            A_depth, A_img, _, _, h_a, w_a  = self.trasform(A_depth, A_img, train =self.train, full=True)
+            B_depth, B_img, _, _, h_b, w_b = self.trasform(B_depth, B_img, train =self.train, full=True)
 #             print(A_path)
-            K_A = self.get_imp_matrx(A_path)
+
             K_B = self.get_imp_matrx(B_path)
-        
-            K_A[0][0]=K_A[0][0]*2
-            K_A[1][1]=K_A[1][1]*2
-            K_A[1][2]=K_A[1][2]*2
-            K_A[0][2]=K_A[0][2]*2
+            
+            if self.opt.interiornet:
+                K_A = np.asarray([[600, 0, 320],
+                        [0, 600, 240],
+                        [0, 0, 1]])
+            else:
+                K_A = self.get_imp_matrx(A_path)
+                
+            scale_K = np.array([[2., 1., 2.],[1., 2., 2.],[1., 1., 1.]])
+            K_A = K_A*scale_K
             if self.train:
-                crop_A = np.array([0, 384*2, 0, 384*2])
-                crop_B = np.array([0, 384, 0, 384])
+                crop_A = np.array([h_a, self.opt.crop_size_h*2+h_a, w_a, self.opt.crop_size_w*2+w_a])
+                crop_B = np.array([h_b, self.opt.crop_size_h+h_b, w_b, self.opt.crop_size_w+w_b])
+                
             else:
                 crop_A = np.array([0, 512*2, 0, 640*2])
                 crop_B = np.array([0, 512, 0, 640])                
-            
+         
         return {'A_i': A_img, 'B_i': B_img, 'A_d': A_depth, 'B_d': B_depth, 'A_paths': A_path, 'B_paths': B_path, 'K_A': K_A, 'K_B': K_B, 'crop_A': crop_A, 'crop_B': crop_B}
 
-#         return {'A_i': A_img, 'B_i': B_img, 'A_d': A_depth, 'B_d': B_depth, 'A_paths': A_path, 'B_paths': B_path}
+
 
     def __len__(self):
-        """Return the total number of images in the dataset.
 
-        As we have two datasets with potentially different number of images,
-        we take a maximum of
-        """
         print(self.A_size, self.B_size)
         return min(self.A_size, self.B_size)  #if self.opt.direction=='AtoB' else self.B_size
 
