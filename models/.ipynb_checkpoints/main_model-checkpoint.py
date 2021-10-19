@@ -153,7 +153,7 @@ class MainModel(BaseModel):
                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose, n_down = opt.Depthf_ndown)
         
         
-        task_input_features = opt.ImageDepthf_outf +  5 
+        task_input_features = opt.ImageDepthf_outf +  5 + opt.Depthf_outf
         self.netTask = networks.define_G(task_input_features, 1, opt.Task_basef, opt.Task_type, opt.norm,
                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.replace_transpose, n_down = opt.Task_ndown)
         
@@ -238,8 +238,8 @@ class MainModel(BaseModel):
         
 
         if self.opt.use_image_for_trans:
-#             self.syn2real_depth = self.netG_A_d(self.syn_depth, self.syn_image)
-            self.syn2real_depth = self.netG_A_d(torch.cat([self.syn_depth, self.syn_image], dim=1))
+            self.syn2real_depth = self.netG_A_d(self.syn_depth, self.syn_image)
+#             self.syn2real_depth = self.netG_A_d(torch.cat([self.syn_depth, self.syn_image], dim=1))
             syn_depth = self.syn2real_depth
             real_depth = self.real_depth
             if self.opt.use_rec_as_real_input:

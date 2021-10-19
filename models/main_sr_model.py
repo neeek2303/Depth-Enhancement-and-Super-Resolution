@@ -134,7 +134,7 @@ class MainSRModel(BaseModel):
         self.visual_names = visual_names_A + visual_names_B  # combine visualizations for A and B
         
         
-        self.model_names = ['G_A_d',  'I2D_features', 'Image2Depth', 'Task']
+        self.model_names = ['G_A_d',  'I2D_features', 'Image2Depth', 'Task', 'Depth_f']
         
         # Define networks 
         

@@ -37,8 +37,8 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--lr_policy', type=str, default='linear', help='learning rate policy. [linear | step | plateau | cosine]')
         parser.add_argument('--lr_decay_iters', type=int, default=50, help='multiply by a gamma every lr_decay_iters iterations')
         parser.add_argument('--max_distance', type=int, default=10, help='max_distance')
-        parser.add_argument('--path_to_intr', type=str, default='/root/datasets/un_depth/Scannet/', help='max_distance')
-        parser.add_argument('--save_image_folder', type=str, default='/root/code_for_article/depth_SR/test_abl_without_add_holes/', help='max_distance')
+        parser.add_argument('--path_to_intr', type=str, default='/safin/data/un_depth/Scannet_meta/', help='max_distance')
+        parser.add_argument('--save_image_folder', type=str, default='/root/code_for_article/depth_SR_git/int2s_sr_test', help='max_distance')
         
         
         parser.add_argument('--update_ratio', type=int, default=1, help='update_ratio G vs D')
@@ -48,22 +48,22 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--custom_pathes', action='store_true', help='custom_pathes to data or not')
         
 
-        parser.add_argument('--path_A', type=str, default='/root/datasets/un_depth/InteriorNet_5.1m/trainB/depth', help='path_A')
+        parser.add_argument('--path_A', type=str, default='/safin/data/un_depth/InteriorNet_5.1m/trainB/depth', help='path_A')
 #         parser.add_argument('--path_A', type=str, default='/root/datasets/un_depth/Scannet_ssim/trainB/full_size/hr', help='path_B')
-        parser.add_argument('--path_B', type=str, default='/root/datasets/un_depth/Scannet_ssim/trainA/full_size/depth', help='path_B')
+        parser.add_argument('--path_B', type=str, default='/safin/data/un_depth/Scannet_ssim/Scannet_ssim/trainA/full_size/depth', help='path_B')
         
 #         parser.add_argument('--path_A_test', type=str, default='/mnt/neuro/depth/NYUv2/InteriorNet/testB/depth', help='path_A_test')')
-        parser.add_argument('--path_A_test', type=str, default='/root/datasets/un_depth/Scannet_ssim/testB/full_size/depth', help='path_B_test')
-        parser.add_argument('--path_B_test', type=str, default='/root/datasets/un_depth/Scannet_ssim/testA/full_size/depth', help='path_B_test')
+        parser.add_argument('--path_A_test', type=str, default='/safin/data/un_depth/Scannet_ssim/Scannet_ssim/testB/full_size/depth', help='path_B_test')
+        parser.add_argument('--path_B_test', type=str, default='/safin/data/un_depth/Scannet_ssim/Scannet_ssim/testA/full_size/depth', help='path_B_test')
         
         parser.add_argument('--image_and_depth', action='store_true', help='image and depth')
-        parser.add_argument('--A_add_paths', type=str, default='/root/datasets/un_depth/InteriorNet_5.1m/trainB/img', help='path_A_test')
+        parser.add_argument('--A_add_paths', type=str, default='/safin/data/un_depth/InteriorNet_5.1m/trainB/img', help='path_A_test')
 #         parser.add_argument('--A_add_paths', type=str, default='/root/datasets/un_depth/Scannet_ssim/trainB/full_size/img', help='path_B_test')  
-        parser.add_argument('--B_add_paths', type=str, default='/root/datasets/un_depth/Scannet_ssim/trainA/full_size/img', help='path_B_test')     
+        parser.add_argument('--B_add_paths', type=str, default='/safin/data/un_depth/Scannet_ssim/Scannet_ssim/trainA/full_size/img', help='path_B_test')     
         
 #         parser.add_argument('--A_add_paths_test', type=str, default='/mnt/neuro/depth/NYUv2/InteriorNet/testB/img', help='path_A_test')
-        parser.add_argument('--A_add_paths_test', type=str, default='/root/datasets/un_depth/Scannet_ssim/testB/full_size/img', help='path_A_test')
-        parser.add_argument('--B_add_paths_test', type=str, default='/root/datasets/un_depth/Scannet_ssim/testA/full_size/img', help='path_B_test')
+        parser.add_argument('--A_add_paths_test', type=str, default='/safin/data/un_depth/Scannet_ssim/Scannet_ssim/testB/full_size/img', help='path_A_test')
+        parser.add_argument('--B_add_paths_test', type=str, default='/safin/data/un_depth/Scannet_ssim/Scannet_ssim/testA/full_size/img', help='path_B_test')
         
         
         parser.add_argument('--num_test', type=int, default=5000)
