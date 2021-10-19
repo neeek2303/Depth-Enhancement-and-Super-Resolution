@@ -43,3 +43,4 @@ test/data/legacy_serialized.pt
 .idea
 wandb
 checkpoints
+scannet_rendering/Anaconda3-2020.11-Linux-x86_64.sh
