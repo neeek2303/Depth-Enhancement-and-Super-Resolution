@@ -37,8 +37,8 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--lr_policy', type=str, default='linear', help='learning rate policy. [linear | step | plateau | cosine]')
         parser.add_argument('--lr_decay_iters', type=int, default=50, help='multiply by a gamma every lr_decay_iters iterations')
         parser.add_argument('--max_distance', type=int, default=10, help='max_distance')
-        parser.add_argument('--path_to_intr', type=str, default='/safin/data/un_depth/Scannet/', help='max_distance')
-        parser.add_argument('--save_image_folder', type=str, default='/root/code_for_article/depth_SR/test_abl_without_add_holes/', help='max_distance')
+        parser.add_argument('--path_to_intr', type=str, default='/safin/data/un_depth/Scannet_meta/', help='max_distance')
+        parser.add_argument('--save_image_folder', type=str, default='/root/code_for_article/depth_SR_git/int2s_sr_test', help='max_distance')
         
         
         parser.add_argument('--update_ratio', type=int, default=1, help='update_ratio G vs D')

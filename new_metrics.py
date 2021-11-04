@@ -10,6 +10,8 @@ import multiprocessing
 import functools
 import torch
 import albumentations as A
+import torch.nn.functional as F
+from skimage.transform import resize
 holes_threshold = 50
 
 filter_basename = lambda x: os.path.splitext(os.path.basename(x))[0]
@@ -212,6 +214,7 @@ def calc_metrics_for_path(path_args, metric_names, max_depth):
     input_orig = imageio.imread(input_path).astype(np.float64)
     pred = imageio.imread(pred_path).astype(np.float64).clip(0, max_depth) 
     target = imageio.imread(target_path).astype(np.float64).clip(0, max_depth)
+#     print(input_orig.shape, pred.shape, target.shape)
     h_pred, w_pred = pred.shape
     h_target, w_target = target.shape
             
@@ -220,6 +223,8 @@ def calc_metrics_for_path(path_args, metric_names, max_depth):
 
     if 2*h_pred == h_target: # if our target is 2x bigger than prediction
         target = target[0::2, 0::2]
+        
+    input_orig = resize(input_orig, (target.shape[0], target.shape[1]))
     hole_map = input_orig < holes_threshold
     target_hole_map = target < holes_threshold
     K = np.loadtxt(intrisic_path)[:3,:3] if intrisic_path is not None else None
@@ -235,7 +240,7 @@ def calculate_given_paths(input_names, pred_names, target_names, metric_names, m
     print(len(input_names), len(pred_names), len(target_names))
     #check that filenames are the same
     
-    intrinsic_names = list(map(lambda x: os.path.join('/root/datasets/un_depth/Scannet', x[:12], 'intrinsic', 'intrinsic_depth.txt'),
+    intrinsic_names = list(map(lambda x: os.path.join('/root/data/un_depth/Scannet', x[:12], 'intrinsic', 'intrinsic_depth.txt'),
                                (filter_basename(input_name) for input_name in input_names)))
     _calc_metrics_for_path = functools.partial(calc_metrics_for_path, metric_names=metric_names, max_depth=max_depth)
     paths = zip(input_names, pred_names, target_names, intrinsic_names)
@@ -252,9 +257,9 @@ def calculate_given_paths(input_names, pred_names, target_names, metric_names, m
 if __name__ == '__main__':
     print('start')
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--input_path', type=str, default = '/root/datasets/un_depth/Scannet_ssim/testA/full_size/depth', help='Path to the input images')
-    parser.add_argument('--pred_path', type=str, default = '/root/code_for_article/depth_SR/test_pred', help='Path to the generated images')
-    parser.add_argument('--target_path', type=str, default = '/root/datasets/un_depth/Scannet_ssim/testB/full_size/depth', help='Path to the target images')
+    parser.add_argument('--input_path', type=str, default = '/root/data/un_depth/Scannet_ssim/Scannet_ssim/testA/full_size/depth', help='Path to the input images')
+    parser.add_argument('--pred_path', type=str, default = '/root/code_for_article/depth_SR_git/int2s_sr_test', help='Path to the generated images')
+    parser.add_argument('--target_path', type=str, default = '/root/data/un_depth/Scannet_ssim/Scannet_ssim/testB/full_size/depth', help='Path to the target images')
     parser.add_argument('--max_depth', type=int, default=5100, help='Maximum depth value')
     parser.add_argument('--n_cpus', type=int, default=10, help='Number of cpu cores to use')
     args = parser.parse_args()
@@ -263,6 +268,7 @@ if __name__ == '__main__':
     input_names = sorted(glob(os.path.join(args.input_path,'*.png')))
     pred_names = sorted(glob(os.path.join(args.pred_path,'*.png')))
     target_names = sorted(glob(os.path.join(args.target_path,'*.png')))
+    print(len(input_names), len(pred_names), len(target_names))
     list_of_metrics = ["rmse", "mae", "rmse_h", "rmse_d", "psnr", "ssim", "mae_h", "mae_d", "mse_v"]
     out = calculate_given_paths(input_names, pred_names, target_names, list_of_metrics, args.max_depth, 10)
     print(out)
