@@ -254,7 +254,7 @@ class MainSRModel(BaseModel):
         del right_mask
         del mask
         
-#         print(self.syn_depth.shape)
+
         if self.opt.use_image_for_trans:
             
             self.syn2real_depth = self.netG_A_d(self.syn_depth, self.syn_image)
@@ -275,8 +275,6 @@ class MainSRModel(BaseModel):
                 self.real_rec = self.netG_A_d(self.r2s)
                 real_depth = torch.where(self.real_mask<0.05, torch.tensor(-1).float().to(real_depth.device), self.r2s) 
             
-#         print('00000000000000000000000000000000000000000000000000000000000')
-#         print(self.netI2D_features)
         if stage =='train':
             image_features_real = self.netI2D_features(F.interpolate(self.real_image, size = (self.opt.crop_size_h, self.opt.crop_size_w) , mode='bicubic'))
             self.real_depth_by_image = self.netImage2Depth(image_features_real)
@@ -293,12 +291,7 @@ class MainSRModel(BaseModel):
             self.real_depth_by_image = self.netImage2Depth(image_features_real)
             self.real_depth_by_image = F.interpolate(self.real_depth_by_image, size = (self.opt.crop_size_h*2,self.opt.crop_size_w*2) , mode='bicubic')
             image_features_real = F.interpolate(image_features_real, size = (self.opt.crop_size_h*2,self.opt.crop_size_w*2) , mode='bicubic')
-#             print(self.real_depth_by_image.shape)
         
-
-#         self.syn_depth_by_image = self.syn_image
-#         self.real_depth_by_image = self.real_image
-               
 
         if self.opt.use_masked:
             out = []
@@ -320,12 +313,7 @@ class MainSRModel(BaseModel):
                 
             self.gt_mask_real = torch.from_numpy(np.array(out)).to(self.real_depth.device)
             self.depth_masked = torch.where(self.gt_mask_real<0.05, torch.tensor(-1).float().to(real_depth.device), real_depth)
-#             depth_r_inp =  torch.cat([self.depth_masked, self.real_depth_by_image], dim=1) 
-#         else:    
-#             depth_r_inp =  torch.cat([real_depth, self.real_depth_by_image], dim=1) 
             
-
- 
         if self.opt.use_masked:
             out = []
             n = 60 if stage =='train' else 11
@@ -358,7 +346,6 @@ class MainSRModel(BaseModel):
 
 
         feat_real_depth = self.netDepth_f(torch.cat([self.depth_masked, self.real_depth_by_image], dim=1))
-#         print(image_features_real.shape, self.depth_masked.shape, self.real_depth_by_image.shape, self.real_image.shape)
         self.pred_real_depth_hr = self.netTask(torch.cat([image_features_real, feat_real_depth, torch.cat([self.depth_masked, self.real_depth_by_image], dim=1), self.real_image], dim=1)) 
 
         
@@ -425,7 +412,6 @@ class MainSRModel(BaseModel):
         a = self.syn2real_depth_masked<self.border 
         b = self.gt_mask_syn<0.1
         c = a + b
-#         print(tens.shape, tenss.shape)
         self.mask_syn_add_holes = torch.where(c, torch.tensor(1).float().to(self.syn2real_depth_masked.device), torch.tensor(0).float().to(self.syn2real_depth_masked.device))
         del a
         del b
@@ -483,7 +469,6 @@ class MainSRModel(BaseModel):
             self.loss_G+=self.loss_syn_norms*self.opt.w_syn_norm
             
         if self.opt.use_smooth_loss:
-#             print(self.pred_real_depth.shape, self.real_image.shape)
             self.loss_smooth = get_smooth_weight(self.pred_real_depth, self.real_image, 3) 
             self.loss_G+=self.loss_smooth*self.opt.w_smooth 
             
