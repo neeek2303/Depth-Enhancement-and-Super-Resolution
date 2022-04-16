@@ -176,10 +176,6 @@ class MainModel(BaseModel):
             self.optimizer_G = torch.optim.Adam(itertools.chain(self.netDepth_f.parameters(), self.netTask.parameters()), lr=opt.lr)
             self.optimizers.append(self.optimizer_G)
 
-
-        
-
-
     def set_input(self, input):
         """Unpack input data from the dataloader and perform necessary pre-processing steps.
 
@@ -232,14 +228,9 @@ class MainModel(BaseModel):
         right_mask = torch.where(right_mask<1, torch.tensor(1).float().to(self.real_depth.device), torch.tensor(0).float().to(right_mask.device))
         mask = right_mask 
         self.syn_mask = right_mask        
-        
-        del right_mask
-        del mask
-        
 
         if self.opt.use_image_for_trans:
             self.syn2real_depth = self.netG_A_d(self.syn_depth, self.syn_image)
-#             self.syn2real_depth = self.netG_A_d(torch.cat([self.syn_depth, self.syn_image], dim=1))
             syn_depth = self.syn2real_depth
             real_depth = self.real_depth
             if self.opt.use_rec_as_real_input:
@@ -284,9 +275,6 @@ class MainModel(BaseModel):
             self.gt_mask_real = torch.from_numpy(np.array(out)).to(self.real_depth.device)
             self.depth_masked = torch.where(self.gt_mask_real<0.05, torch.tensor(-1).float().to(real_depth.device), real_depth)
 
-            
-
- 
         if self.opt.use_masked:
             out = []
             n = 60 if stage =='train' else 11
@@ -311,23 +299,12 @@ class MainModel(BaseModel):
         else:
             self.syn2real_depth_masked =  syn_depth
 
-        
-        del ones
-        del out
-        del syn_depth
-        del real_depth
-
         feat_syn_depth = self.netDepth_f(torch.cat([self.syn2real_depth_masked, self.syn_depth_by_image], dim=1))
         feat_real_depth = self.netDepth_f(torch.cat([self.depth_masked, self.real_depth_by_image], dim=1))
         
         self.pred_syn_depth = self.netTask(torch.cat([image_features_syn,  feat_syn_depth,  torch.cat([self.syn2real_depth_masked, self.syn_depth_by_image], dim=1), self.syn_image], dim=1)) 
         self.pred_real_depth = self.netTask(torch.cat([image_features_real, feat_real_depth, torch.cat([self.depth_masked, self.real_depth_by_image], dim=1) , self.real_image], dim=1)) 
         
-#         self.pred_syn_depth = self.netTask(torch.cat([image_features_syn,    torch.cat([self.syn2real_depth_masked, self.syn_depth_by_image], dim=1), self.syn_image], dim=1)) 
-#         self.pred_real_depth = self.netTask(torch.cat([image_features_real,   torch.cat([self.depth_masked, self.real_depth_by_image], dim=1) , self.real_image], dim=1)) 
-
-        del image_features_syn
-        del image_features_real
         syn_mean = torch.mean(self.syn_depth*self.syn_mask) 
         syn_pred_mean = torch.mean(self.pred_syn_depth*self.syn_mask) 
         
@@ -377,11 +354,7 @@ class MainModel(BaseModel):
         a = self.syn2real_depth_masked<self.border 
         b = self.gt_mask_syn<0.1
         c = a + b
-#         print(tens.shape, tenss.shape)
         self.mask_syn_add_holes = torch.where(c, torch.tensor(1).float().to(self.syn2real_depth_masked.device), torch.tensor(0).float().to(self.syn2real_depth_masked.device))
-        del a
-        del b
-        del c
         
 
         if self.opt.norm_loss:
