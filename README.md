@@ -1,6 +1,6 @@
 # Towards Unpaired Depth Enhancement and Super-Resolution in the Wild
 
-![](teaser.png)
+![](depth_teaser.png)
 
 
 Please refer to the [sourse](https://arxiv.org/abs/2105.12038) paper. 
